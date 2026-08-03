@@ -1,0 +1,249 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>VulnGantt | Gantt de remediación de vulnerabilidades</title>
+<meta name="description" content="Gestiona la remediación de vulnerabilidades con diagramas Gantt por etapas (análisis, aprobación, remediación, seguimiento) e inventario de equipos afectados con su estado.">
+<meta name="robots" content="index, follow">
+<meta property="og:title" content="VulnGantt | Gantt de remediación de vulnerabilidades">
+<meta property="og:description" content="Diagramas Gantt por etapas e inventario de equipos para la remediación de vulnerabilidades.">
+<meta property="og:type" content="website">
+<script type="application/ld+json">
+{
+  "@context": "https://schema.org",
+  "@type": "SoftwareApplication",
+  "name": "VulnGantt",
+  "applicationCategory": "BusinessApplication",
+  "operatingSystem": "Web",
+  "description": "Herramienta local para gestionar la remediación de vulnerabilidades con diagramas Gantt por etapas e inventario de equipos afectados.",
+  "inLanguage": "es",
+  "featureList": [
+    "Diagramas Gantt con etapas de análisis, aprobación, remediación y seguimiento",
+    "Inventario de equipos afectados con estado de remediación",
+    "Vista resumen con indicadores y cronograma combinado",
+    "Persistencia en archivo JSON"
+  ]
+}
+</script>
+<link rel="stylesheet" href="css/styles.css">
+</head>
+<body>
+<a class="skip-link" href="#main">Saltar al contenido principal</a>
+
+<header class="topbar">
+  <div class="brand">
+    <h1>VulnGantt</h1>
+  </div>
+  <div class="actions">
+    <span id="saveStatus" class="save-status">Sin archivo asignado</span>
+    <button id="btnNew" class="btn btn-primary">+ Nueva vulnerabilidad</button>
+    <button id="btnOpen" class="btn">Abrir archivo</button>
+    <button id="btnSave" class="btn">Guardar archivo</button>
+    <button id="btnSummary" class="btn">Resumen</button>
+    <input type="file" id="fileInput" accept=".json,application/json" hidden>
+  </div>
+</header>
+
+<main id="main" class="layout">
+  <aside class="sidebar">
+    <div class="sidebar-head">
+      <input type="search" id="searchInput" aria-label="Buscar vulnerabilidad" placeholder="Buscar por título, descripción o responsable...">
+    </div>
+    <ul id="vulnList" class="vuln-list"></ul>
+    <div id="sidebarStats" class="sidebar-foot"></div>
+  </aside>
+
+  <section id="detail" class="detail">
+    <div class="empty-state" id="emptyState">
+      <div class="empty-icon" aria-hidden="true">G</div>
+      <p>Selecciona una vulnerabilidad de la lista o crea una nueva para ver su diagrama Gantt y el inventario de equipos.</p>
+    </div>
+
+    <div id="detailContent" class="detail-content" hidden>
+      <div class="detail-head">
+        <div class="detail-title">
+          <div class="dt-row">
+            <span id="sevBadge" class="badge"></span>
+            <h2 id="vulnTitle"></h2>
+            <span id="vulnId" class="mono"></span>
+          </div>
+        </div>
+        <div class="detail-actions">
+          <select id="vulnEstado">
+            <option value="abierta">Abierta</option>
+            <option value="en_proceso">En proceso</option>
+            <option value="en_revision">En revisión</option>
+            <option value="cerrada">Cerrada</option>
+          </select>
+          <button id="btnEditVuln" class="btn">Editar</button>
+          <button id="btnDeleteVuln" class="btn btn-danger">Eliminar</button>
+        </div>
+      </div>
+
+      <div class="detail-meta">
+        <span>Responsable: <b id="metaResp"></b></span>
+        <span>Detectada: <b id="metaDet"></b></span>
+        <span>Actualizada: <b id="metaUpd"></b></span>
+        <span>Equipos: <b id="metaEq"></b></span>
+      </div>
+
+      <p id="vulnDesc" class="vuln-desc"></p>
+
+      <div class="card">
+        <div class="card-head">
+          <h3>Diagrama Gantt</h3>
+          <div class="legend" id="ganttLegend"></div>
+        </div>
+        <p class="card-hint">Ajusta las fechas de cada etapa (Análisis, Aprobación, Remediación, Seguimiento). La línea roja marca el día de hoy.</p>
+        <div id="ganttContainer"></div>
+      </div>
+
+      <div class="card">
+        <div class="card-head">
+          <h3>Inventario de equipos</h3>
+          <span id="eqCount" class="badge badge-ghost"></span>
+        </div>
+        <form id="eqForm" class="eq-form">
+          <input type="text" id="eqNombre" placeholder="Nombre del equipo *" aria-label="Nombre del equipo" required>
+          <input type="text" id="eqIp" placeholder="IP / hostname" aria-label="IP o hostname del equipo">
+          <input type="text" id="eqSo" placeholder="SO / versión" aria-label="Sistema operativo o versión">
+          <select id="eqEstado" aria-label="Estado del equipo">
+            <option value="pendiente">Pendiente</option>
+            <option value="en_proceso">En proceso</option>
+            <option value="remediado">Remediado</option>
+            <option value="verificado">Verificado</option>
+            <option value="no_reparable">No reparable</option>
+          </select>
+          <button type="submit" class="btn btn-primary" id="eqSubmit">Agregar</button>
+          <button type="button" class="btn" id="eqCancel" hidden>Cancelar</button>
+        </form>
+
+        <details class="bulk-add" id="bulkAdd">
+          <summary>Agregar varios equipos a la vez (en lote)</summary>
+          <div class="bulk-body">
+            <textarea id="bulkTextarea" rows="4" spellcheck="false" placeholder="Un equipo por línea, formato: Nombre; IP; SO&#10;Ejemplo:&#10;SERVER-01;10.0.0.5;Windows Server 2019&#10;SERVER-02;10.0.0.6;Windows Server 2022&#10;WORKSTN-17;10.20.3.17;Windows 11&#10;Las líneas que empiecen con # se ignoran."></textarea>
+            <div class="bulk-actions">
+              <button type="button" id="btnBulkAdd" class="btn btn-primary">Agregar en lote</button>
+            </div>
+          </div>
+        </details>
+
+        <div class="eq-bulkbar" id="eqBulkBar">
+          <label class="chk-all"><input type="checkbox" id="eqSelectAll"> Seleccionar todo</label>
+          <span id="eqSelCount" class="bulk-count">0 seleccionados</span>
+          <select id="eqBulkEstado">
+            <option value="pendiente">Pendiente</option>
+            <option value="en_proceso">En proceso</option>
+            <option value="remediado">Remediado</option>
+            <option value="verificado">Verificado</option>
+            <option value="no_reparable">No reparable</option>
+          </select>
+          <button type="button" id="btnBulkEstado" class="btn btn-sm">Aplicar estado</button>
+          <button type="button" id="btnBulkDelete" class="btn btn-sm btn-danger">Eliminar seleccionados</button>
+          <button type="button" id="btnBulkClear" class="btn btn-sm">Limpiar</button>
+        </div>
+
+        <table class="eq-table" aria-label="Inventario de equipos con su estado de remediación">
+          <thead>
+            <tr><th class="chk"></th><th>#</th><th>Equipo</th><th>IP</th><th>SO</th><th>Estado</th><th>Acciones</th></tr>
+          </thead>
+          <tbody id="eqBody"></tbody>
+        </table>
+      </div>
+    </div>
+  </section>
+
+  <section id="summaryView" class="summary" hidden>
+    <div class="kpi-grid" id="kpiGrid"></div>
+
+    <div class="card">
+      <div class="card-head">
+        <h3>Cronograma de remediación (todas las vulnerabilidades)</h3>
+        <div class="legend" id="sumLegend"></div>
+      </div>
+      <p class="card-hint">Muestra la etapa de Remediación de cada vulnerabilidad en una línea de tiempo común. Haz clic en una barra para abrir la vulnerabilidad.</p>
+      <div id="sumGantt"></div>
+    </div>
+
+    <div class="card">
+      <div class="card-head">
+        <h3>Detalle por vulnerabilidad</h3>
+      </div>
+      <table class="sum-table" aria-label="Detalle de vulnerabilidades por severidad, estado, responsable, detección y etapa actual">
+        <thead>
+          <tr><th>Severidad</th><th>Título</th><th>Estado</th><th>Responsable</th><th>Detección</th><th>Etapa actual</th><th>Equipos</th></tr>
+        </thead>
+        <tbody id="sumBody"></tbody>
+      </table>
+    </div>
+
+    <div class="card">
+      <div class="card-head">
+        <h3>Estado de equipos por vulnerabilidad</h3>
+        <div class="legend" id="eqStateLegend"></div>
+      </div>
+      <p class="card-hint">Conteo de equipos según su estado de remediación en cada vulnerabilidad. Haz clic en una fila para abrirla.</p>
+      <table class="sum-table" aria-label="Conteo de equipos por estado de remediación en cada vulnerabilidad">
+        <thead>
+          <tr><th>Vulnerabilidad</th><th>Pendiente</th><th>En proceso</th><th>Remediado</th><th>Verificado</th><th>No reparable</th><th>Total</th><th>Distribución</th></tr>
+        </thead>
+        <tbody id="eqStateBody"></tbody>
+      </table>
+    </div>
+  </section>
+</main>
+
+<div class="modal-overlay" id="modalOverlay" hidden>
+  <div class="modal">
+    <div class="modal-head">
+      <h2 id="modalTitle">Nueva vulnerabilidad</h2>
+      <button type="button" class="btn-icon" id="modalClose" title="Cerrar" aria-label="Cerrar">&times;</button>
+    </div>
+    <form id="vulnForm" novalidate>
+      <div class="form-grid">
+        <label class="full">Título / identificador *
+          <input type="text" id="fTitulo" placeholder="Ej. CVE-2024-1234 en servidores web">
+        </label>
+        <label>Severidad
+          <select id="fSeveridad">
+            <option value="critica">Crítica</option>
+            <option value="alta">Alta</option>
+            <option value="media" selected>Media</option>
+            <option value="baja">Baja</option>
+          </select>
+        </label>
+        <label>Estado
+          <select id="fEstado">
+            <option value="abierta">Abierta</option>
+            <option value="en_proceso">En proceso</option>
+            <option value="en_revision">En revisión</option>
+            <option value="cerrada">Cerrada</option>
+          </select>
+        </label>
+        <label>Responsable
+          <input type="text" id="fResponsable" placeholder="Nombre / equipo">
+        </label>
+        <label>Fecha de detección
+          <input type="date" id="fFecha">
+        </label>
+        <label class="full">Descripción
+          <textarea id="fDescripcion" rows="3" placeholder="Detalle de la vulnerabilidad, contexto, referencias..."></textarea>
+        </label>
+      </div>
+      <p class="modal-hint">Al crear, las etapas (Análisis, Aprobación, Remediación, Seguimiento) reciben fechas por defecto que podrás ajustar en el diagrama.</p>
+      <div class="modal-foot">
+        <button type="button" class="btn" id="modalCancel">Cancelar</button>
+        <button type="submit" class="btn btn-primary" id="modalSave">Crear</button>
+      </div>
+    </form>
+  </div>
+</div>
+
+<div id="toast" class="toast" role="status" aria-live="polite"></div>
+
+<script src="js/storage.js"></script>
+<script src="js/gantt.js"></script>
+<script src="js/app.js"></script>
+</body>
+</html>
