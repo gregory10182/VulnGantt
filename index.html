@@ -72,7 +72,7 @@
         <div class="detail-actions">
           <select id="vulnEstado">
             <option value="abierta">Abierta</option>
-            <option value="en_proceso">En proceso</option>
+            <option value="sin_acceso">Sin acceso</option>
             <option value="en_revision">En revisión</option>
             <option value="cerrada">Cerrada</option>
           </select>
@@ -109,11 +109,11 @@
           <input type="text" id="eqIp" placeholder="IP / hostname" aria-label="IP o hostname del equipo">
           <input type="text" id="eqSo" placeholder="SO / versión" aria-label="Sistema operativo o versión">
           <select id="eqEstado" aria-label="Estado del equipo">
-            <option value="pendiente">Pendiente</option>
-            <option value="en_proceso">En proceso</option>
+            <option value="apagado">Apagado</option>
+            <option value="sin_acceso">Sin acceso</option>
+            <option value="decomisado">Decomisado</option>
             <option value="remediado">Remediado</option>
-            <option value="verificado">Verificado</option>
-            <option value="no_reparable">No reparable</option>
+            <option value="derivado">Derivado</option>
           </select>
           <button type="submit" class="btn btn-primary" id="eqSubmit">Agregar</button>
           <button type="button" class="btn" id="eqCancel" hidden>Cancelar</button>
@@ -124,20 +124,51 @@
           <div class="bulk-body">
             <textarea id="bulkTextarea" rows="4" spellcheck="false" placeholder="Un equipo por línea, formato: Nombre; IP; SO&#10;Ejemplo:&#10;SERVER-01;10.0.0.5;Windows Server 2019&#10;SERVER-02;10.0.0.6;Windows Server 2022&#10;WORKSTN-17;10.20.3.17;Windows 11&#10;Las líneas que empiecen con # se ignoran."></textarea>
             <div class="bulk-actions">
+              <select id="bulkEstado" aria-label="Estado inicial de los equipos del lote">
+                <option value="apagado">Apagado</option>
+                <option value="sin_acceso">Sin acceso</option>
+                <option value="decomisado">Decomisado</option>
+                <option value="remediado">Remediado</option>
+                <option value="derivado">Derivado</option>
+              </select>
               <button type="button" id="btnBulkAdd" class="btn btn-primary">Agregar en lote</button>
             </div>
           </div>
         </details>
 
+        <details class="bulk-add bulk-upd" id="bulkUpd">
+          <summary>Actualizar estado de equipos existentes (por lista)</summary>
+          <div class="bulk-body">
+            <p class="bulk-note">Pega los equipos por nombre y el estado seleccionado se aplicará a las coincidencias ya existentes en esta vulnerabilidad. Un equipo por línea (nombre; IP, opcional). Las líneas que empiecen con # se ignoran.</p>
+            <textarea id="updTextarea" rows="4" spellcheck="false" placeholder="SERVER-01&#10;SERVER-02;10.0.0.6&#10;WORKSTN-17"></textarea>
+            <div class="bulk-actions">
+              <select id="updEstado" aria-label="Estado que se aplicará a los equipos del lote">
+                <option value="apagado">Apagado</option>
+                <option value="sin_acceso">Sin acceso</option>
+                <option value="decomisado">Decomisado</option>
+                <option value="remediado">Remediado</option>
+                <option value="derivado">Derivado</option>
+              </select>
+              <button type="button" id="btnBulkUpd" class="btn btn-primary">Actualizar en lote</button>
+            </div>
+          </div>
+        </details>
+
+        <div class="eq-filter">
+          <input type="search" id="eqSearch" aria-label="Buscar equipos" placeholder="Buscar equipos por nombre, IP o SO...">
+          <span id="eqFilterCount" class="bulk-count"></span>
+          <button type="button" id="btnSelectFiltered" class="btn btn-sm">Seleccionar coincidencias</button>
+        </div>
+
         <div class="eq-bulkbar" id="eqBulkBar">
           <label class="chk-all"><input type="checkbox" id="eqSelectAll"> Seleccionar todo</label>
           <span id="eqSelCount" class="bulk-count">0 seleccionados</span>
           <select id="eqBulkEstado">
-            <option value="pendiente">Pendiente</option>
-            <option value="en_proceso">En proceso</option>
+            <option value="apagado">Apagado</option>
+            <option value="sin_acceso">Sin acceso</option>
+            <option value="decomisado">Decomisado</option>
             <option value="remediado">Remediado</option>
-            <option value="verificado">Verificado</option>
-            <option value="no_reparable">No reparable</option>
+            <option value="derivado">Derivado</option>
           </select>
           <button type="button" id="btnBulkEstado" class="btn btn-sm">Aplicar estado</button>
           <button type="button" id="btnBulkDelete" class="btn btn-sm btn-danger">Eliminar seleccionados</button>
@@ -186,7 +217,7 @@
       <p class="card-hint">Conteo de equipos según su estado de remediación en cada vulnerabilidad. Haz clic en una fila para abrirla.</p>
       <table class="sum-table" aria-label="Conteo de equipos por estado de remediación en cada vulnerabilidad">
         <thead>
-          <tr><th>Vulnerabilidad</th><th>Pendiente</th><th>En proceso</th><th>Remediado</th><th>Verificado</th><th>No reparable</th><th>Total</th><th>Distribución</th></tr>
+          <tr><th>Vulnerabilidad</th><th>Apagado</th><th>Sin acceso</th><th>Decomisado</th><th>Remediado</th><th>Derivado</th><th>Total</th><th>Distribución</th></tr>
         </thead>
         <tbody id="eqStateBody"></tbody>
       </table>
@@ -216,7 +247,7 @@
         <label>Estado
           <select id="fEstado">
             <option value="abierta">Abierta</option>
-            <option value="en_proceso">En proceso</option>
+            <option value="sin_acceso">Sin acceso</option>
             <option value="en_revision">En revisión</option>
             <option value="cerrada">Cerrada</option>
           </select>

@@ -20,19 +20,19 @@ const ESTADOS_VULN = [
 ];
 
 const ESTADOS_EQ = [
-  ['pendiente', 'Pendiente'],
-  ['en_proceso', 'En proceso'],
+  ['apagado', 'Apagado'],
+  ['sin_acceso', 'Sin acceso'],
+  ['decomisado', 'Decomisado'],
   ['remediado', 'Remediado'],
-  ['verificado', 'Verificado'],
-  ['no_reparable', 'No reparable']
+  ['derivado', 'Derivado']
 ];
 
 const ESTADOS_EQ_COLOR = {
-  pendiente: '#94a3b8',
-  en_proceso: '#f59e0b',
+  apagado: '#94a3b8',
+  sin_acceso: '#f59e0b',
+  decomisado: '#ef4444',
   remediado: '#16a34a',
-  verificado: '#0ea5e9',
-  no_reparable: '#ef4444'
+  derivado: '#0ea5e9'
 };
 
 let modalLastFocus = null;
@@ -46,7 +46,9 @@ const state = {
   editingEqId: null,
   editingVulnId: null,
   selectedEqs: new Set(),
-  lastEqVuln: null
+  lastEqVuln: null,
+  eqFilter: '',
+  lastEqEstado: 'apagado'
 };
 
 function $(sel) { return document.querySelector(sel); }
@@ -67,10 +69,22 @@ function esc(s) {
   });
 }
 function sanitizeData(data) {
+  const migrar = {
+    pendiente: 'apagado',
+    en_proceso: 'sin_acceso',
+    remediado: 'decomisado',
+    verificado: 'remediado',
+    no_reparable: 'derivado'
+  };
+  const conocidos = ['apagado', 'sin_acceso', 'decomisado', 'remediado', 'derivado'];
   if (!data.vulnerabilidades) data.vulnerabilidades = [];
   data.vulnerabilidades.forEach(function (v) {
     if (!v.etapas || typeof v.etapas !== 'object') v.etapas = {};
     if (!Array.isArray(v.equipos)) v.equipos = [];
+    v.equipos.forEach(function (e) {
+      if (migrar[e.estado]) e.estado = migrar[e.estado];
+      else if (!conocidos.includes(e.estado)) e.estado = 'apagado';
+    });
   });
   return data;
 }
@@ -218,7 +232,7 @@ function etapaActualInfo(v) {
 }
 
 function equiposRemediados(v) {
-  return v.equipos.filter(function (e) { return e.estado === 'remediado' || e.estado === 'verificado'; }).length;
+  return v.equipos.filter(function (e) { return e.estado === 'remediado'; }).length;
 }
 
 function renderSummaryView() {
@@ -398,10 +412,21 @@ function renderGantt(v) {
 
 /* ---------------- Equipos ---------------- */
 
+function eqMatch(e, q) {
+  if (!q) return true;
+  return (e.nombre + ' ' + (e.ip || '') + ' ' + (e.so || '')).toLowerCase().includes(q);
+}
+
+function filteredEquipos(v) {
+  return v.equipos.filter(function (e) { return eqMatch(e, state.eqFilter); });
+}
+
 function renderEquipos(v) {
   if (state.lastEqVuln !== v.id) {
     state.lastEqVuln = v.id;
     state.selectedEqs.clear();
+    state.eqFilter = '';
+    $('#eqSearch').value = '';
   }
   state.selectedEqs.forEach(function (id) {
     if (!v.equipos.some(function (e) { return e.id === id; })) state.selectedEqs.delete(id);
@@ -410,6 +435,8 @@ function renderEquipos(v) {
   $('#eqCount').textContent = v.equipos.length + ' equipo(s)';
   const tbody = $('#eqBody');
   tbody.innerHTML = '';
+  const visible = filteredEquipos(v);
+
   if (!v.equipos.length) {
     const tr = document.createElement('tr');
     const td = document.createElement('td');
@@ -418,10 +445,27 @@ function renderEquipos(v) {
     td.textContent = 'Sin equipos registrados. Agrega los equipos afectados con su estado.';
     tr.appendChild(td);
     tbody.appendChild(tr);
+    $('#eqFilterCount').textContent = '';
     renderBulkBar(v);
     return;
   }
-  v.equipos.forEach(function (eq, i) {
+
+  if (!visible.length) {
+    const tr = document.createElement('tr');
+    const td = document.createElement('td');
+    td.colSpan = 7;
+    td.className = 'eq-empty';
+    td.textContent = 'Ningún equipo coincide con la búsqueda.';
+    tr.appendChild(td);
+    tbody.appendChild(tr);
+    $('#eqFilterCount').textContent = '0 de ' + v.equipos.length + ' resultado(s)';
+    renderBulkBar(v);
+    return;
+  }
+
+  $('#eqFilterCount').textContent = state.eqFilter ? visible.length + ' de ' + v.equipos.length + ' resultado(s)' : '';
+
+  visible.forEach(function (eq, i) {
     const tr = document.createElement('tr');
     tr.innerHTML =
       '<td class="chk"><input type="checkbox" class="eq-chk" data-id="' + eq.id + '"' + (state.selectedEqs.has(eq.id) ? ' checked' : '') + '></td>' +
@@ -463,6 +507,8 @@ function bulkAddEquipos(v) {
     return;
   }
   let agregados = 0, repetidos = 0;
+  const estadoInicial = $('#bulkEstado').value || 'apagado';
+  state.lastEqEstado = estadoInicial;
   const seen = new Set(v.equipos.map(function (e) { return e.nombre.trim().toLowerCase(); }));
   lines.forEach(function (line) {
     const parts = line.split(/[;,\t]\s*/).map(function (p) { return p.trim(); }).filter(Boolean);
@@ -478,7 +524,7 @@ function bulkAddEquipos(v) {
       nombre: nombre,
       ip: parts[0] || '',
       so: parts[1] || '',
-      estado: 'pendiente',
+      estado: estadoInicial,
       agregado: nowISO()
     });
     agregados++;
@@ -495,9 +541,58 @@ function bulkAddEquipos(v) {
   flashMsg(agregados + ' equipo(s) agregados' + (repetidos ? ', ' + repetidos + ' duplicado(s) omitidos' : ''));
 }
 
+function bulkUpdateEquipos(v) {
+  const lines = $('#updTextarea').value.split(/\r?\n/).map(function (l) { return l.trim(); }).filter(function (l) {
+    return l && !l.startsWith('#');
+  });
+  if (!lines.length) {
+    flashMsg('Pega al menos una línea con nombres de equipos');
+    return;
+  }
+  const estado = $('#updEstado').value || 'apagado';
+  state.lastEqEstado = estado;
+  let actualizados = 0, noEncontrados = 0, repetidos = 0;
+  const updated = new Set();
+  lines.forEach(function (line) {
+    const parts = line.split(/[;,\t]\s*/).map(function (p) { return p.trim(); }).filter(Boolean);
+    const nombre = parts[0];
+    const ip = parts[1] || '';
+    if (!nombre) return;
+    let eq = v.equipos.find(function (e) { return e.nombre.trim().toLowerCase() === nombre.toLowerCase(); });
+    if (!eq && ip) {
+      eq = v.equipos.find(function (e) { return (e.ip || '').toLowerCase() === ip.toLowerCase(); });
+    }
+    if (!eq) {
+      noEncontrados++;
+      return;
+    }
+    if (updated.has(eq.id)) {
+      repetidos++;
+      return;
+    }
+    updated.add(eq.id);
+    eq.estado = estado;
+    eq.actualizado = nowISO();
+    actualizados++;
+  });
+  if (!actualizados) {
+    flashMsg(noEncontrados ? 'Ningún equipo coincidió con los nombres del lote' : 'No se reconoció ninguna línea');
+    return;
+  }
+  v.actualizado = nowISO();
+  persist();
+  $('#updTextarea').value = '';
+  renderEquipos(v);
+  renderList();
+  flashMsg(actualizados + ' equipo(s) actualizados a "' + estadoLabel(ESTADOS_EQ, estado) + '"' +
+    (noEncontrados ? ', ' + noEncontrados + ' no encontrado(s)' : '') +
+    (repetidos ? ', ' + repetidos + ' duplicado(s) omitidos' : ''));
+}
+
 function resetEqForm() {
   state.editingEqId = null;
   $('#eqForm').reset();
+  $('#eqEstado').value = state.lastEqEstado;
   $('#eqSubmit').textContent = 'Agregar';
   $('#eqCancel').hidden = true;
 }
@@ -509,7 +604,7 @@ function editEquipo(v, id) {
   $('#eqNombre').value = eq.nombre || '';
   $('#eqIp').value = eq.ip || '';
   $('#eqSo').value = eq.so || '';
-  $('#eqEstado').value = eq.estado || 'pendiente';
+  $('#eqEstado').value = eq.estado || 'apagado';
   $('#eqSubmit').textContent = 'Guardar cambios';
   $('#eqCancel').hidden = false;
   $('#eqNombre').focus();
@@ -732,6 +827,7 @@ function bindEvents() {
     }
     v.actualizado = nowISO();
     persist();
+    state.lastEqEstado = $('#eqEstado').value;
     const editando = !!state.editingEqId;
     resetEqForm();
     renderEquipos(v);
@@ -744,6 +840,11 @@ function bindEvents() {
   $('#btnBulkAdd').addEventListener('click', function () {
     const v = getSelected();
     if (v) bulkAddEquipos(v);
+  });
+
+  $('#btnBulkUpd').addEventListener('click', function () {
+    const v = getSelected();
+    if (v) bulkUpdateEquipos(v);
   });
 
   $('#eqSelectAll').addEventListener('change', function () {
@@ -801,6 +902,25 @@ function bindEvents() {
     state.selectedEqs.clear();
     const v = getSelected();
     if (v) renderEquipos(v);
+  });
+
+  $('#eqSearch').addEventListener('input', function () {
+    state.eqFilter = this.value.trim().toLowerCase();
+    const v = getSelected();
+    if (v) renderEquipos(v);
+  });
+
+  $('#btnSelectFiltered').addEventListener('click', function () {
+    const v = getSelected();
+    if (!v) return;
+    const ids = filteredEquipos(v).map(function (e) { return e.id; });
+    if (!ids.length) {
+      flashMsg('No hay coincidencias para seleccionar');
+      return;
+    }
+    ids.forEach(function (id) { state.selectedEqs.add(id); });
+    renderEquipos(v);
+    flashMsg(ids.length + ' equipo(s) seleccionados');
   });
 
   $('#eqBody').addEventListener('click', function (e) {
