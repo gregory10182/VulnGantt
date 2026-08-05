@@ -301,6 +301,7 @@ function renderSummaryView() {
       '<td>' + esc(estadoLabel(ESTADOS_VULN, v.estado)) + '</td>' +
       '<td>' + esc(v.responsable || '—') + '</td>' +
       '<td>' + esc(v.fecha_deteccion || '—') + '</td>' +
+      '<td>' + esc(finGantt(v)) + '</td>' +
       '<td><span class="lg"><i style="background:' + ea.color + '"></i>' + ea.nombre + '</span></td>' +
       '<td>' + prog + '</td>';
     tbody.appendChild(tr);
@@ -367,6 +368,15 @@ function showEmpty() {
   $('#detailContent').hidden = true;
 }
 
+function finGantt(v) {
+  let fin = '';
+  ETAPAS.forEach(function (e) {
+    const etapa = v.etapas[e.key] || {};
+    if (etapa.fin && (!fin || etapa.fin > fin)) fin = etapa.fin;
+  });
+  return fin || '—';
+}
+
 /* ---------------- Detalle ---------------- */
 
 function renderDetail() {
@@ -384,6 +394,7 @@ function renderDetail() {
   $('#vulnEstado').value = v.estado;
   $('#metaResp').textContent = v.responsable || '—';
   $('#metaDet').textContent = v.fecha_deteccion || '—';
+  $('#metaFin').textContent = finGantt(v);
   $('#metaUpd').textContent = v.actualizado ? new Date(v.actualizado).toLocaleString('es-ES') : '—';
   $('#metaEq').textContent = String(v.equipos.length);
   $('#vulnDesc').textContent = v.descripcion || 'Sin descripción.';
