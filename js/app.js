@@ -58,6 +58,13 @@ function hoyISO() {
   return d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0') + '-' + String(d.getDate()).padStart(2, '0');
 }
 function nowISO() { return new Date().toISOString(); }
+
+function fmtFecha(s) {
+  if (!s) return '';
+  const parts = String(s).split('T')[0].split('-').map(Number);
+  if (parts.length !== 3 || parts.some(isNaN)) return String(s);
+  return (parts[2] < 10 ? '0' : '') + parts[2] + '/' + (parts[1] < 10 ? '0' : '') + parts[1] + '/' + parts[0];
+}
 function addDays(iso, n) {
   const d = new Date(iso + 'T00:00:00');
   d.setDate(d.getDate() + n);
@@ -300,8 +307,8 @@ function renderSummaryView() {
       '<td class="sum-title">' + esc(v.titulo || 'Sin título') + '</td>' +
       '<td>' + esc(estadoLabel(ESTADOS_VULN, v.estado)) + '</td>' +
       '<td>' + esc(v.responsable || '—') + '</td>' +
-      '<td>' + esc(v.fecha_deteccion || '—') + '</td>' +
-      '<td>' + esc(finGantt(v)) + '</td>' +
+      '<td>' + esc(fmtFecha(v.fecha_deteccion) || '—') + '</td>' +
+      '<td>' + esc(fmtFecha(finGantt(v)) || '—') + '</td>' +
       '<td><span class="lg"><i style="background:' + ea.color + '"></i>' + ea.nombre + '</span></td>' +
       '<td>' + prog + '</td>';
     tbody.appendChild(tr);
@@ -393,8 +400,8 @@ function renderDetail() {
   $('#vulnId').textContent = '#' + v.id;
   $('#vulnEstado').value = v.estado;
   $('#metaResp').textContent = v.responsable || '—';
-  $('#metaDet').textContent = v.fecha_deteccion || '—';
-  $('#metaFin').textContent = finGantt(v);
+  $('#metaDet').textContent = fmtFecha(v.fecha_deteccion) || '—';
+  $('#metaFin').textContent = fmtFecha(finGantt(v)) || '—';
   $('#metaUpd').textContent = v.actualizado ? new Date(v.actualizado).toLocaleString('es-ES') : '—';
   $('#metaEq').textContent = String(v.equipos.length);
   $('#vulnDesc').textContent = v.descripcion || 'Sin descripción.';

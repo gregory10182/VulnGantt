@@ -12,6 +12,10 @@ const Gantt = (() => {
     return String(d.getDate()).padStart(2, '0') + '/' + String(d.getMonth() + 1).padStart(2, '0');
   }
 
+  function fmtFull(d) {
+    return String(d.getDate()).padStart(2, '0') + '/' + String(d.getMonth() + 1).padStart(2, '0') + '/' + d.getFullYear();
+  }
+
   function startOfWeek(d) {
     const x = new Date(d);
     const wd = (x.getDay() + 6) % 7;
@@ -160,9 +164,9 @@ const Gantt = (() => {
         bar.style.left = (i0 / N * 100) + '%';
         bar.style.width = Math.max((i1 - i0 + 1) / N * 100, 0.5) + '%';
         bar.style.background = e.color;
-        bar.title = e.nombre + ': ' + (e.inicio || '?') + ' a ' + (e.fin || '?');
-        bar.setAttribute('aria-label', e.nombre + ': del ' + (e.inicio || '?') + ' al ' + (e.fin || '?'));
-        if (N <= 60) bar.textContent = fmtShort(e.s) + ' - ' + fmtShort(e.f);
+        bar.title = e.nombre + ': ' + fmtFull(e.s) + ' a ' + fmtFull(e.f);
+        bar.setAttribute('aria-label', e.nombre + ': del ' + fmtFull(e.s) + ' al ' + fmtFull(e.f));
+        if (N <= 60) bar.textContent = fmtFull(e.s) + ' - ' + fmtFull(e.f);
         track.appendChild(bar);
       } else {
         const ph = document.createElement('div');
@@ -259,12 +263,12 @@ const Gantt = (() => {
         bar.style.left = (i0 / N * 100) + '%';
         bar.style.width = Math.max((i1 - i0 + 1) / N * 100, 0.5) + '%';
         bar.style.background = e.color;
-        bar.title = e.titulo + ': ' + (e.inicio || '?') + ' a ' + (e.fin || '?');
-        bar.setAttribute('aria-label', 'Remediación de ' + e.titulo + ': del ' + (e.inicio || '?') + ' al ' + (e.fin || '?'));
+        bar.title = e.titulo + ': ' + fmtFull(e.s) + ' a ' + fmtFull(e.f);
+        bar.setAttribute('aria-label', 'Remediación de ' + e.titulo + ': del ' + fmtFull(e.s) + ' al ' + fmtFull(e.f));
         bar.addEventListener('click', function () {
           if (opts && opts.onSelect) opts.onSelect(e.id);
         });
-        if (N <= 60) bar.textContent = fmtShort(e.s) + ' - ' + fmtShort(e.f);
+        if (N <= 60) bar.textContent = fmtFull(e.s) + ' - ' + fmtFull(e.f);
         track.appendChild(bar);
       } else {
         const ph = document.createElement('div');
