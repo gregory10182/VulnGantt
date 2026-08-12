@@ -35,6 +35,28 @@ const ESTADOS_EQ_COLOR = {
   derivado: '#0ea5e9'
 };
 
+const ESTADOS_EQ_LEGACY = {
+  pendiente: 'Pendiente',
+  en_proceso: 'En proceso',
+  verificado: 'Verificado',
+  no_reparable: 'No reparable'
+};
+
+const EQ_NORM = {
+  pendiente: 'apagado',
+  en_proceso: 'sin_acceso',
+  verificado: 'remediado',
+  no_reparable: 'derivado'
+};
+
+function eqEstadoNorm(s) {
+  return EQ_NORM[s] || s;
+}
+
+function eqEstadoLabel(s) {
+  return ESTADOS_EQ_LEGACY[s] || s;
+}
+
 let modalLastFocus = null;
 
 const state = {
@@ -76,22 +98,10 @@ function esc(s) {
   });
 }
 function sanitizeData(data) {
-  const migrar = {
-    pendiente: 'apagado',
-    en_proceso: 'sin_acceso',
-    remediado: 'decomisado',
-    verificado: 'remediado',
-    no_reparable: 'derivado'
-  };
-  const conocidos = ['apagado', 'sin_acceso', 'decomisado', 'remediado', 'derivado'];
   if (!data.vulnerabilidades) data.vulnerabilidades = [];
   data.vulnerabilidades.forEach(function (v) {
     if (!v.etapas || typeof v.etapas !== 'object') v.etapas = {};
     if (!Array.isArray(v.equipos)) v.equipos = [];
-    v.equipos.forEach(function (e) {
-      if (migrar[e.estado]) e.estado = migrar[e.estado];
-      else if (!conocidos.includes(e.estado)) e.estado = 'apagado';
-    });
   });
   return data;
 }
@@ -208,15 +218,28 @@ function selectVuln(id) {
 
 function showDetailView() {
   $('#summaryView').hidden = true;
+  $('#inventoryView').hidden = true;
   $('#detail').hidden = false;
   $('#btnSummary').classList.remove('active');
+  $('#btnInventory').classList.remove('active');
 }
 
 function showSummary() {
   $('#detail').hidden = true;
+  $('#inventoryView').hidden = true;
   $('#summaryView').hidden = false;
   $('#btnSummary').classList.add('active');
+  $('#btnInventory').classList.remove('active');
   renderSummaryView();
+}
+
+function showInventory() {
+  $('#detail').hidden = true;
+  $('#summaryView').hidden = true;
+  $('#inventoryView').hidden = false;
+  $('#btnSummary').classList.remove('active');
+  $('#btnInventory').classList.add('active');
+  renderInventory();
 }
 
 function etapaActualInfo(v) {
@@ -239,7 +262,7 @@ function etapaActualInfo(v) {
 }
 
 function equiposRemediados(v) {
-  return v.equipos.filter(function (e) { return e.estado === 'remediado'; }).length;
+  return v.equipos.filter(function (e) { return eqEstadoNorm(e.estado) === 'remediado'; }).length;
 }
 
 function renderSummaryView() {
@@ -249,10 +272,9 @@ function renderSummaryView() {
   const enProceso = vulns.filter(function (v) { return v.estado !== 'cerrada'; }).length;
   const cerradas = vulns.filter(function (v) { return v.estado === 'cerrada'; }).length;
   let eqTotal = 0, eqRem = 0;
-  vulns.forEach(function (v) {
-    eqTotal += v.equipos.length;
-    eqRem += equiposRemediados(v);
-  });
+  const inv = buildInventario();
+  eqTotal = inv.length;
+  eqRem = inv.filter(function (it) { return (it.estados.remediado || 0) > 0; }).length;
 
   function kpi(label, value, cls) {
     return '<div class="kpi ' + cls + '"><div class="kpi-val">' + value + '</div><div class="kpi-label">' + label + '</div></div>';
@@ -263,7 +285,7 @@ function renderSummaryView() {
     kpi('Críticas', criticas, 'kpi-crit') +
     kpi('En proceso', enProceso, 'kpi-proc') +
     kpi('Cerradas', cerradas, 'kpi-done') +
-    kpi('Equipos afectados', eqTotal, 'kpi-total') +
+    kpi('Equipos afectados (únicos)', eqTotal, 'kpi-total') +
     kpi('Equipos remediados', eqRem + (eqTotal ? ' (' + Math.round(eqRem / eqTotal * 100) + '%)' : ''), 'kpi-done');
 
   const sorted = vulns.slice().sort(function (a, b) {
@@ -327,6 +349,8 @@ function renderSummaryView() {
   Gantt.renderSummary($('#sumGantt'), items, { onSelect: selectVuln });
 
   renderEquiposResumen(sorted);
+  renderEstadosAgrupados(sorted);
+  renderEquiposTotales();
 }
 
 function renderEquiposResumen(sorted) {
@@ -347,7 +371,8 @@ function renderEquiposResumen(sorted) {
     const counts = {};
     ESTADOS_EQ.forEach(function (e) { counts[e[0]] = 0; });
     v.equipos.forEach(function (eq) {
-      if (counts[eq.estado] !== undefined) counts[eq.estado]++;
+      const s = eqEstadoNorm(eq.estado);
+      if (counts[s] !== undefined) counts[s]++;
     });
     const total = v.equipos.length;
     const segs = ESTADOS_EQ.map(function (e) {
@@ -370,9 +395,247 @@ function renderEquiposResumen(sorted) {
   });
 }
 
+function renderEstadosAgrupados(sorted) {
+  const tbody = $('#grpBody');
+  tbody.innerHTML = '';
+  const rows = sorted.filter(function (v) { return v.equipos.length > 0; });
+  if (!rows.length) {
+    const tr = document.createElement('tr');
+    const td = document.createElement('td');
+    td.colSpan = 7;
+    td.className = 'eq-empty';
+    td.textContent = 'Aún no hay equipos registrados en ninguna vulnerabilidad.';
+    tr.appendChild(td);
+    tbody.appendChild(tr);
+    return;
+  }
+  rows.forEach(function (v) {
+    let rem = 0, pend = 0, der = 0, dec = 0;
+    v.equipos.forEach(function (eq) {
+      const s = eqEstadoNorm(eq.estado);
+      if (s === 'remediado') rem++;
+      else if (s === 'apagado' || s === 'sin_acceso') pend++;
+      else if (s === 'derivado') der++;
+      else if (s === 'decomisado') dec++;
+      else pend++;
+    });
+    const total = v.equipos.length;
+    const segs = [
+      [rem, '#16a34a', 'Remediados'],
+      [pend, '#f59e0b', 'Pendientes'],
+      [der, '#0ea5e9', 'Derivados'],
+      [dec, '#ef4444', 'Decomisados']
+    ].map(function (s) {
+      if (!s[0]) return '';
+      const pct = Math.round(s[0] / total * 100);
+      return '<span style="width:' + pct + '%;background:' + s[1] + '" title="' + s[2] + ': ' + s[0] + '"></span>';
+    }).join('');
+    const tr = document.createElement('tr');
+    tr.className = 'sum-row';
+    tr.dataset.id = v.id;
+    tr.tabIndex = 0;
+    tr.setAttribute('role', 'button');
+    tr.setAttribute('aria-label', 'Abrir vulnerabilidad ' + (v.titulo || 'sin título'));
+    tr.innerHTML =
+      '<td class="sum-title">' + esc(v.titulo || 'Sin título') + '</td>' +
+      '<td class="num-ct">' + rem + '</td>' +
+      '<td class="num-ct">' + pend + '</td>' +
+      '<td class="num-ct">' + der + '</td>' +
+      '<td class="num-ct">' + dec + '</td>' +
+      '<td class="num-ct strong">' + total + '</td>' +
+      '<td><span class="stack-bar">' + segs + '</span></td>';
+    tbody.appendChild(tr);
+  });
+}
+
 function showEmpty() {
   $('#emptyState').hidden = false;
   $('#detailContent').hidden = true;
+}
+
+function renderEquiposTotales() {
+  const tbody = $('#eqTotBody');
+  tbody.innerHTML = '';
+  let rem = 0, pend = 0, der = 0, dec = 0;
+  state.data.vulnerabilidades.forEach(function (v) {
+    v.equipos.forEach(function (eq) {
+      const s = eqEstadoNorm(eq.estado);
+      if (s === 'remediado') rem++;
+      else if (s === 'apagado' || s === 'sin_acceso') pend++;
+      else if (s === 'derivado') der++;
+      else if (s === 'decomisado') dec++;
+      else pend++;
+    });
+  });
+  const total = rem + pend + der + dec;
+  if (!total) {
+    const tr = document.createElement('tr');
+    const td = document.createElement('td');
+    td.colSpan = 3;
+    td.className = 'eq-empty';
+    td.textContent = 'Aún no hay equipos registrados en ninguna vulnerabilidad.';
+    tr.appendChild(td);
+    tbody.appendChild(tr);
+    return;
+  }
+  const pct = function (n) { return Math.round(n / total * 100); };
+  [
+    ['Remediados', rem, '#16a34a'],
+    ['Pendientes', pend, '#f59e0b'],
+    ['Derivados', der, '#0ea5e9'],
+    ['Decomisados', dec, '#ef4444']
+  ].forEach(function (f) {
+    const tr = document.createElement('tr');
+    tr.innerHTML =
+      '<td><span class="lg"><i style="background:' + f[2] + '"></i>' + f[0] + '</span></td>' +
+      '<td class="num-ct strong">' + f[1] + '</td>' +
+      '<td class="num-ct">' + pct(f[1]) + '%</td>';
+    tbody.appendChild(tr);
+  });
+  const trT = document.createElement('tr');
+  trT.innerHTML =
+    '<td class="strong">Total</td>' +
+    '<td class="num-ct strong">' + total + '</td>' +
+    '<td class="num-ct">100%</td>';
+  tbody.appendChild(trT);
+}
+
+/* ---------------- Inventario ---------------- */
+
+function invKey(eq) {
+  const n = (eq.nombre || '').trim().toLowerCase();
+  return n || (eq.ip || '').trim().toLowerCase();
+}
+
+function buildInventario() {
+  const map = {};
+  state.data.vulnerabilidades.forEach(function (v) {
+    v.equipos.forEach(function (eq) {
+      const k = invKey(eq);
+      if (!k) return;
+      if (!map[k]) map[k] = { nombre: eq.nombre, ip: eq.ip, so: eq.so, estados: {}, vulns: 0 };
+      map[k].vulns++;
+      const s = eqEstadoNorm(eq.estado);
+      map[k].estados[s] = (map[k].estados[s] || 0) + 1;
+    });
+  });
+  return Object.keys(map).map(function (k) { return map[k]; });
+}
+
+function renderInventory() {
+  const inv = buildInventario();
+  const q = ($('#invSearch').value || '').trim().toLowerCase();
+  const filtered = inv.filter(function (it) {
+    if (!q) return true;
+    return (it.nombre || '').toLowerCase().indexOf(q) !== -1 ||
+           (it.ip || '').toLowerCase().indexOf(q) !== -1 ||
+           (it.so || '').toLowerCase().indexOf(q) !== -1;
+  });
+
+  const total = inv.length;
+  const rem = inv.filter(function (it) { return (it.estados.remediado || 0) > 0; }).length;
+
+  function kpi(label, value, cls) {
+    return '<div class="kpi ' + cls + '"><div class="kpi-val">' + value + '</div><div class="kpi-label">' + label + '</div></div>';
+  }
+  $('#invKpiGrid').innerHTML =
+    kpi('Parque de equipos (únicos)', total, 'kpi-total') +
+    kpi('Remediados (al menos en una vulnerabilidad)', rem + (total ? ' (' + Math.round(rem / total * 100) + '%)' : ''), 'kpi-done') +
+    kpi('Pendientes', total - rem, 'kpi-proc');
+
+  const tbody = $('#invBody');
+  tbody.innerHTML = '';
+  $('#invFilterCount').textContent = filtered.length + ' de ' + total + ' equipo(s)';
+  if (!filtered.length) {
+    const tr = document.createElement('tr');
+    const td = document.createElement('td');
+    td.colSpan = 7;
+    td.className = 'eq-empty';
+    td.textContent = total ? 'Ningún equipo coincide con la búsqueda.' : 'Aún no hay equipos registrados en ninguna vulnerabilidad.';
+    tr.appendChild(td);
+    tbody.appendChild(tr);
+    return;
+  }
+  filtered.forEach(function (it) {
+    const remEq = it.estados.remediado || 0;
+    const totalEq = it.vulns;
+    const global = remEq > 0;
+    const segs = ESTADOS_EQ.map(function (e) {
+      if (!it.estados[e[0]]) return '';
+      const pct = Math.round(it.estados[e[0]] / totalEq * 100);
+      return '<span style="width:' + pct + '%;background:' + ESTADOS_EQ_COLOR[e[0]] + '" title="' + e[1] + ': ' + it.estados[e[0]] + '"></span>';
+    }).join('');
+    const tr = document.createElement('tr');
+    tr.innerHTML =
+      '<td class="mono strong">' + esc(it.nombre || '—') + '</td>' +
+      '<td>' + esc(it.ip || '—') + '</td>' +
+      '<td>' + esc(it.so || '—') + '</td>' +
+      '<td class="num-ct">' + totalEq + '</td>' +
+      '<td>' + (global
+        ? '<span class="badge" style="background:' + ESTADOS_EQ_COLOR.remediado + '">Remediado</span>'
+        : '<span class="badge badge-ghost">Pendiente</span>') + '</td>' +
+      '<td class="num-ct">' + remEq + ' de ' + totalEq + '</td>' +
+      '<td><span class="stack-bar">' + segs + '</span></td>';
+    tbody.appendChild(tr);
+  });
+}
+
+function migrarEstadosViejos() {
+  let cambiados = 0;
+  state.data.vulnerabilidades.forEach(function (v) {
+    v.equipos.forEach(function (e) {
+      if (EQ_NORM[e.estado]) {
+        e.estado = EQ_NORM[e.estado];
+        cambiados++;
+      }
+    });
+  });
+  if (!cambiados) {
+    flashMsg('No se encontraron estados viejos que migrar');
+    return;
+  }
+  persist();
+  renderInventory();
+  renderList();
+  const v = getSelected();
+  if (v) renderEquipos(v);
+  flashMsg('Migrados ' + cambiados + ' equipo(s) a los estados nuevos');
+}
+
+function invBulkUpdate() {
+  const lines = $('#invUpdTextarea').value.split(/\r?\n/).map(function (l) { return l.trim(); }).filter(function (l) {
+    return l && !l.startsWith('#');
+  });
+  if (!lines.length) {
+    flashMsg('Pega al menos una línea con nombres de equipos');
+    return;
+  }
+  const estado = $('#invUpdEstado').value || 'apagado';
+  const keys = new Set();
+  lines.forEach(function (line) {
+    const nombre = line.split(/[;,\t]\s*/).map(function (p) { return p.trim(); }).filter(Boolean).shift();
+    if (nombre) keys.add(nombre.toLowerCase());
+  });
+  let apariciones = 0;
+  const encontrados = new Set();
+  state.data.vulnerabilidades.forEach(function (v) {
+    v.equipos.forEach(function (eq) {
+      if (keys.has(invKey(eq))) {
+        eq.estado = estado;
+        apariciones++;
+        encontrados.add(invKey(eq));
+      }
+    });
+  });
+  if (!apariciones) {
+    flashMsg('Ninguno de los equipos de la lista existe en el parque');
+    return;
+  }
+  const sinCoincidencia = keys.size - encontrados.size;
+  persist();
+  $('#invUpdTextarea').value = '';
+  renderInventory();
+  flashMsg(estadoLabel(ESTADOS_EQ, estado) + ' aplicado a ' + encontrados.size + ' equipo(s) en ' + apariciones + ' registro(s)' + (sinCoincidencia ? ' · ' + sinCoincidencia + ' sin coincidencia' : ''));
 }
 
 function finGantt(v) {
@@ -495,6 +758,8 @@ function renderEquipos(v) {
       ESTADOS_EQ.map(function (e) {
         return '<option value="' + e[0] + '"' + (e[0] === eq.estado ? ' selected' : '') + '>' + e[1] + '</option>';
       }).join('') +
+      (ESTADOS_EQ.some(function (e) { return e[0] === eq.estado; }) ? '' :
+        '<option value="' + esc(eq.estado) + '" selected>' + esc(eqEstadoLabel(eq.estado)) + '</option>') +
       '</select></td>' +
       '<td><button class="btn btn-sm btn-edit" data-action="edit" data-id="' + eq.id + '">Editar</button> ' +
       '<button class="btn btn-sm btn-danger" data-action="del" data-id="' + eq.id + '">Eliminar</button></td>';
@@ -725,6 +990,246 @@ async function handleFileInput(e) {
   }
 }
 
+/* ---------------- Reporte PDF ---------------- */
+
+function reportCiclo() {
+  const d = new Date();
+  return 'Q' + (Math.floor(d.getMonth() / 3) + 1) + '-' + d.getFullYear();
+}
+
+function estadoSLAReport(v) {
+  if (v.estado === 'cerrada') return 'Resuelto';
+  const fin = finGantt(v);
+  if (fin !== '—' && fin < hoyISO()) return 'Vencido';
+  return 'En Tiempo';
+}
+
+function hexRgb(hex) {
+  const n = parseInt(hex.slice(1), 16);
+  return ((n >> 16 & 255) / 255).toFixed(3) + ' ' + ((n >> 8 & 255) / 255).toFixed(3) + ' ' + ((n & 255) / 255).toFixed(3);
+}
+
+const RP = {
+  slate: '0.06 0.09 0.16',
+  ink: '0.13 0.16 0.22',
+  muted: '0.42 0.46 0.52',
+  accent: '0.96 0.62 0.04',
+  light: '0.945 0.955 0.97',
+  bar: '0.89 0.91 0.94',
+  green: '0.13 0.55 0.24',
+  red: '0.86 0.15 0.15',
+  orange: '0.91 0.42 0.04'
+};
+
+function slaRp(v) {
+  const s = estadoSLAReport(v);
+  if (s === 'Resuelto') return { t: s, c: RP.green, b: 1 };
+  if (s === 'Vencido') return { t: s, c: RP.red, b: 1 };
+  return { t: s, c: RP.orange, b: 1 };
+}
+
+function stackedBarRp(doc, x, y, w, h, segs) {
+  const total = segs.reduce(function (a, s) { return a + s[0]; }, 0);
+  doc.rect(x, y, w, h, RP.bar);
+  let cx = x;
+  segs.forEach(function (s) {
+    if (!s[0] || !total) return;
+    const sw = Math.min(Math.max(w * s[0] / total, 1.5), x + w - cx);
+    doc.rect(cx, y, sw, h, s[1]);
+    cx += sw;
+  });
+}
+
+function renderReportPdf() {
+  const vulns = state.data.vulnerabilidades;
+  const total = vulns.length;
+  const criticas = vulns.filter(function (v) { return v.severidad === 'critica'; }).length;
+  const altas = vulns.filter(function (v) { return v.severidad === 'alta'; }).length;
+  const medias = vulns.filter(function (v) { return v.severidad === 'media'; }).length;
+  const bajas = vulns.filter(function (v) { return v.severidad === 'baja'; }).length;
+  const cerradas = vulns.filter(function (v) { return v.estado === 'cerrada'; }).length;
+  const enCurso = total - cerradas;
+  const criticasAbiertas = vulns.filter(function (v) { return v.severidad === 'critica' && v.estado !== 'cerrada'; }).length;
+  const pct = total ? Math.round(cerradas / total * 100) : 0;
+  const estatus = pct >= 80 ? 'En Cumplimiento' : (pct >= 50 ? 'En Riesgo' : 'En Incumplimiento');
+  const hoy = hoyISO();
+
+  const sorted = vulns.slice().sort(function (a, b) {
+    const w = { critica: 0, alta: 1, media: 2, baja: 3 };
+    const d = (w[a.severidad] || 9) - (w[b.severidad] || 9);
+    if (d !== 0) return d;
+    return (b.fecha_deteccion || '').localeCompare(a.fecha_deteccion || '');
+  });
+
+  const doc = new PDFDoc.Doc();
+  const x0 = doc.margin;
+  const W = PDFDoc.PW - doc.margin * 2;
+
+  /* Encabezado */
+  const bandH = 92;
+  doc.rect(x0, doc.y, W, bandH, RP.slate);
+  doc.rect(x0, doc.y + bandH, W, 3, RP.accent);
+  doc.text('Informe Ejecutivo de Vulnerabilidades', x0 + 18, doc.y + 18, { font: 'F2', size: 20, color: '1 1 1' });
+  doc.text('Plan de remediación, parcheo y control de SLA', x0 + 18, doc.y + 44, { font: 'F1', size: 10.5, color: '0.78 0.81 0.85' });
+  doc.text('Fecha de emisión: ' + fmtFecha(hoyISO()) + '   |   Ciclo: ' + reportCiclo(), x0 + 18, doc.y + 61, { font: 'F1', size: 9, color: '0.66 0.69 0.74' });
+  doc.text('VulnGantt', x0 + W - 18 - doc.w('VulnGantt', 'F2', 10), doc.y + 18, { font: 'F2', size: 10, color: RP.accent });
+  const chipTxt = 'Estado general: ' + estatus + ' (' + pct + '%)';
+  const chipColor = pct >= 80 ? RP.green : (pct >= 50 ? RP.accent : RP.red);
+  doc.rect(x0 + 18, doc.y + 74, doc.w(chipTxt, 'F2', 8.5) + 14, 15, chipColor);
+  doc.text(chipTxt, x0 + 25, doc.y + 77, { font: 'F2', size: 8.5, color: '1 1 1' });
+  doc.y += bandH + 3 + 16;
+
+  /* KPIs */
+  const kGap = 8;
+  const kW = (W - kGap * 3) / 4;
+  const kH = 62;
+  [
+    ['TOTAL DETECTADAS', String(total), criticas + ' críticas / ' + altas + ' altas', RP.accent],
+    ['REMEDIADAS / CERRADAS', String(cerradas), pct + '% eficiencia de cierre', RP.green],
+    ['EN CURSO', String(enCurso), 'en etapas del Gantt', '0.055 0.647 0.914'],
+    ['CRÍTICAS ABIERTAS', String(criticasAbiertas), 'requieren atención inmediata', RP.red]
+  ].forEach(function (k, i) {
+    const x = x0 + i * (kW + kGap);
+    doc.rect(x, doc.y, kW, kH, '1 1 1', '0.85 0.87 0.9');
+    doc.rect(x, doc.y, 3, kH, k[3]);
+    doc.text(k[0], x + 10, doc.y + 9, { font: 'F2', size: 6.8, color: RP.muted });
+    doc.text(k[1], x + 10, doc.y + 19, { font: 'F2', size: 19, color: RP.slate });
+    doc.text(k[2], x + 10, doc.y + 45, { font: 'F1', size: 7.8, color: RP.muted });
+  });
+  doc.y += kH + 16;
+
+  function seccion(t) {
+    doc.ensure(40);
+    doc.text(t, x0, doc.y, { font: 'F2', size: 12, color: RP.slate });
+    doc.rect(x0, doc.y + 15, 30, 2.4, RP.accent);
+    doc.y += 27;
+  }
+
+  /* 1. Vulnerabilidades */
+  seccion('1. Vulnerabilidades');
+  stackedBarRp(doc, x0, doc.y, W, 12, [
+    [criticas, hexRgb(SEV.critica.color)],
+    [altas, hexRgb(SEV.alta.color)],
+    [medias, hexRgb(SEV.media.color)],
+    [bajas, hexRgb(SEV.baja.color)]
+  ]);
+  doc.y += 18;
+  let lx = x0;
+  [
+    ['Críticas', criticas, hexRgb(SEV.critica.color)],
+    ['Altas', altas, hexRgb(SEV.alta.color)],
+    ['Medias', medias, hexRgb(SEV.media.color)],
+    ['Bajas', bajas, hexRgb(SEV.baja.color)]
+  ].forEach(function (it) {
+    const label = it[0] + ' (' + it[1] + ')';
+    doc.rect(lx, doc.y + 1.5, 7, 7, it[2]);
+    doc.text(label, lx + 11, doc.y, { font: 'F1', size: 8, color: RP.muted });
+    lx += 11 + doc.w(label, 'F1', 8) + 20;
+  });
+  doc.y += 14;
+  doc.table(
+    ['Vulnerabilidad', 'Severidad', 'Etapa Gantt', 'Fin compromiso', 'Estado SLA'],
+    [216, 60, 84, 72, 71],
+    sorted.map(function (v) {
+      const sev = SEV[v.severidad] || SEV.media;
+      return [
+        v.titulo || 'Sin título',
+        { t: sev.label, c: hexRgb(sev.color), b: 1 },
+        etapaActualInfo(v).nombre,
+        fmtFecha(finGantt(v)) || '—',
+        slaRp(v)
+      ];
+    }),
+    { size: 8.5, headSize: 7 }
+  );
+
+  /* 2. Avance por etapa (según las etapas definidas en cada vulnerabilidad) */
+  seccion('2. Avance por etapa');
+  const colsE = [150, 60, 70, 50, 173];
+  const headsE = ['Etapa', 'En curso', 'Completadas', 'Avance %', 'Progreso'];
+  function headEtapas() {
+    doc.rect(x0, doc.y, W, 16, RP.slate);
+    let hx = x0;
+    headsE.forEach(function (h, i) {
+      doc.text(h.toUpperCase(), hx + 5, doc.y + 4.5, { font: 'F2', size: 7, color: '1 1 1' });
+      hx += colsE[i];
+    });
+    doc.y += 16;
+  }
+  const rowsE = ETAPAS.map(function (e) {
+    let cur = 0, done = 0;
+    vulns.forEach(function (v) {
+      const et = v.etapas[e.key];
+      if (!et) return;
+      if (et.fin && et.fin <= hoy) done++;
+      else if (et.inicio && et.inicio <= hoy) cur++;
+    });
+    return { nombre: e.nombre, cur: cur, done: done, avance: total ? Math.round(done / total * 100) : 0, color: hexRgb(e.color) };
+  });
+  headEtapas();
+  rowsE.forEach(function (e, i) {
+    if (doc.y + 20 > doc.bottomLimit()) {
+      doc.newPage();
+      headEtapas();
+    }
+    if (i % 2 === 1) doc.rect(x0, doc.y, W, 20, RP.light);
+    doc.text(e.nombre, x0 + 5, doc.y + 6, { font: 'F1', size: 8.5 });
+    doc.text(String(e.cur), x0 + 155, doc.y + 6, { font: 'F1', size: 8.5 });
+    doc.text(String(e.done), x0 + 215, doc.y + 6, { font: 'F1', size: 8.5 });
+    doc.text(e.avance + '%', x0 + 285, doc.y + 6, { font: 'F2', size: 8.5, color: RP.slate });
+    doc.rect(x0 + 335, doc.y + 6, 153, 8, RP.bar);
+    if (e.avance > 0) doc.rect(x0 + 335, doc.y + 6, Math.max(153 * e.avance / 100, 2), 8, e.color);
+    doc.hline(doc.y + 20, x0, x0 + W);
+    doc.y += 20;
+  });
+  doc.y += 10;
+
+  /* 3. Estado de equipos */
+  seccion('3. Estado de equipos');
+  let rem = 0, pend = 0, der = 0, dec = 0;
+  vulns.forEach(function (v) {
+    v.equipos.forEach(function (eq) {
+      const s = eqEstadoNorm(eq.estado);
+      if (s === 'remediado') rem++;
+      else if (s === 'apagado' || s === 'sin_acceso') pend++;
+      else if (s === 'derivado') der++;
+      else if (s === 'decomisado') dec++;
+      else pend++;
+    });
+  });
+  const totEq = rem + pend + der + dec;
+  stackedBarRp(doc, x0, doc.y, W, 14, [
+    [rem, hexRgb(ESTADOS_EQ_COLOR.remediado)],
+    [pend, hexRgb('#f59e0b')],
+    [der, hexRgb(ESTADOS_EQ_COLOR.derivado)],
+    [dec, hexRgb(ESTADOS_EQ_COLOR.decomisado)]
+  ]);
+  doc.y += 22;
+  [
+    ['Remediados', rem, hexRgb(ESTADOS_EQ_COLOR.remediado)],
+    ['Pendientes', pend, hexRgb('#f59e0b')],
+    ['Derivados', der, hexRgb(ESTADOS_EQ_COLOR.derivado)],
+    ['Decomisados', dec, hexRgb(ESTADOS_EQ_COLOR.decomisado)],
+    ['Total de registros', totEq, RP.slate]
+  ].forEach(function (r, i) {
+    doc.ensure(16);
+    doc.rect(x0 + 2, doc.y + 3, 7, 7, r[2]);
+    doc.text(r[0], x0 + 16, doc.y, { font: i === 4 ? 'F2' : 'F1', size: 9 });
+    const nTxt = String(r[1]);
+    doc.text(nTxt, x0 + W - 90 - doc.w(nTxt, 'F2', 9), doc.y, { font: 'F2', size: 9, color: RP.slate });
+    const pTxt = totEq ? Math.round(r[1] / totEq * 100) + '%' : '—';
+    doc.text(pTxt, x0 + W - 40 - doc.w(pTxt, 'F1', 9), doc.y, { font: 'F1', size: 9, color: RP.muted });
+    if (i < 4) doc.hline(doc.y + 13, x0, x0 + W, '0.93 0.94 0.96', 0.4);
+    doc.y += 16;
+  });
+
+  doc.save('Informe_vulnGantt.pdf');
+}
+
+function exportPdf() {
+  renderReportPdf();
+}
+
 /* ---------------- Eventos ---------------- */
 
 function bindEvents() {
@@ -740,6 +1245,19 @@ function bindEvents() {
       showDetailView();
     }
   });
+  $('#btnExportPdf').addEventListener('click', exportPdf);
+  $('#btnInventory').addEventListener('click', function () {
+    if ($('#inventoryView').hidden) {
+      showInventory();
+    } else {
+      showDetailView();
+    }
+  });
+  $('#invSearch').addEventListener('input', renderInventory);
+  $('#btnInvBulkUpd').addEventListener('click', invBulkUpdate);
+  $('#btnMigrarEstados').addEventListener('click', function () {
+    if (confirm('¿Migrar los estados viejos a los nuevos? Esta acción modifica los datos actuales.')) migrarEstadosViejos();
+  });
 
   $('#sumBody').addEventListener('click', function (e) {
     const tr = e.target.closest('tr[data-id]');
@@ -747,6 +1265,11 @@ function bindEvents() {
   });
 
   $('#eqStateBody').addEventListener('click', function (e) {
+    const tr = e.target.closest('tr[data-id]');
+    if (tr) selectVuln(tr.dataset.id);
+  });
+
+  $('#grpBody').addEventListener('click', function (e) {
     const tr = e.target.closest('tr[data-id]');
     if (tr) selectVuln(tr.dataset.id);
   });
@@ -777,6 +1300,7 @@ function bindEvents() {
   }
   rowKeyNav($('#sumBody'));
   rowKeyNav($('#eqStateBody'));
+  rowKeyNav($('#grpBody'));
 
   $('#vulnEstado').addEventListener('change', function () {
     const v = getSelected();
@@ -1027,6 +1551,18 @@ function init() {
   $('#eqStateLegend').innerHTML = ESTADOS_EQ.map(function (e) {
     return '<span class="lg"><i style="background:' + ESTADOS_EQ_COLOR[e[0]] + '"></i>' + e[1] + '</span>';
   }).join('');
+  $('#invLegend').innerHTML = ESTADOS_EQ.map(function (e) {
+    return '<span class="lg"><i style="background:' + ESTADOS_EQ_COLOR[e[0]] + '"></i>' + e[1] + '</span>';
+  }).join('');
+  $('#grpLegend').innerHTML = [
+    ['#16a34a', 'Remediados'],
+    ['#f59e0b', 'Pendientes'],
+    ['#0ea5e9', 'Derivados'],
+    ['#ef4444', 'Decomisados']
+  ].map(function (g) {
+    return '<span class="lg"><i style="background:' + g[0] + '"></i>' + g[1] + '</span>';
+  }).join('');
+  $('#eqTotLegend').innerHTML = $('#grpLegend').innerHTML;
 
   bindEvents();
   renderList();

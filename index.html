@@ -41,6 +41,8 @@
     <button id="btnOpen" class="btn">Abrir archivo</button>
     <button id="btnSave" class="btn">Guardar archivo</button>
     <button id="btnSummary" class="btn">Resumen</button>
+    <button id="btnInventory" class="btn">Inventario</button>
+    <button id="btnExportPdf" class="btn">Exportar PDF</button>
     <input type="file" id="fileInput" accept=".json,application/json" hidden>
   </div>
 </header>
@@ -223,6 +225,84 @@
         <tbody id="eqStateBody"></tbody>
       </table>
     </div>
+
+    <div class="card">
+      <div class="card-head">
+        <h3>Estados agrupados por vulnerabilidad</h3>
+        <div class="legend" id="grpLegend"></div>
+      </div>
+      <p class="card-hint">Conteo por vulnerabilidad. Haz clic en una fila para abrir la vulnerabilidad.</p>
+      <table class="sum-table" aria-label="Conteo de equipos agrupado por vulnerabilidad en remediados, pendientes, derivados y decomisados">
+        <thead>
+          <tr><th>Vulnerabilidad</th><th>Remediados</th><th>Pendientes</th><th>Derivados</th><th>Decomisados</th><th>Total</th><th>Distribución</th></tr>
+        </thead>
+        <tbody id="grpBody"></tbody>
+      </table>
+    </div>
+
+    <div class="card">
+      <div class="card-head">
+        <h3>Totales de equipos por estado</h3>
+        <div class="legend" id="eqTotLegend"></div>
+      </div>
+      <p class="card-hint">Suma de todos los registros de equipos en todas las vulnerabilidades, por estado.</p>
+      <table class="sum-table" aria-label="Totales de registros de equipos por estado: remediados, pendientes, derivados y decomisados">
+        <thead>
+          <tr><th>Estado</th><th>Cantidad</th><th>%</th></tr>
+        </thead>
+        <tbody id="eqTotBody"></tbody>
+      </table>
+    </div>
+  </section>
+
+  <section id="inventoryView" class="summary" hidden>
+    <div class="kpi-grid" id="invKpiGrid"></div>
+
+    <div class="card">
+      <div class="card-head">
+        <h3>Parque de equipos (inventario único)</h3>
+        <div class="legend" id="invLegend"></div>
+      </div>
+      <p class="card-hint">Cada equipo cuenta una sola vez, aunque esté registrado en varias vulnerabilidades. Se identifica por nombre (o por IP si no tiene nombre) sin distinguir mayúsculas.</p>
+      <div class="eq-filter">
+        <input type="search" id="invSearch" aria-label="Buscar en el inventario" placeholder="Buscar por nombre, IP o SO...">
+        <span id="invFilterCount" class="bulk-count"></span>
+      </div>
+      <table class="sum-table" aria-label="Inventario único de equipos con su estado global de remediación">
+        <thead>
+          <tr><th>Equipo</th><th>IP</th><th>SO</th><th>Vulnerabilidades</th><th>Estado global</th><th>Remediado en</th><th>Distribución por estado</th></tr>
+        </thead>
+        <tbody id="invBody"></tbody>
+      </table>
+    </div>
+
+    <div class="card">
+      <div class="card-head">
+        <h3>Actualizar estado en todo el parque</h3>
+      </div>
+      <p class="card-hint">Pega una lista de nombres de equipos y el estado seleccionado se aplicará en todas las vulnerabilidades donde aparezcan. Un equipo por línea (nombre; IP, opcional). Las líneas que empiecen con # se ignoran.</p>
+      <textarea id="invUpdTextarea" rows="4" spellcheck="false" placeholder="SERVER-01&#10;SERVER-02;10.0.0.6&#10;WORKSTN-17"></textarea>
+      <div class="bulk-actions">
+        <select id="invUpdEstado" aria-label="Estado que se aplicará en todo el parque">
+          <option value="apagado">Apagado</option>
+          <option value="sin_acceso">Sin acceso</option>
+          <option value="decomisado">Decomisado</option>
+          <option value="remediado">Remediado</option>
+          <option value="derivado">Derivado</option>
+        </select>
+        <button type="button" id="btnInvBulkUpd" class="btn btn-primary">Actualizar en todo el parque</button>
+      </div>
+    </div>
+
+    <div class="card">
+      <div class="card-head">
+        <h3>Migrar estados viejos</h3>
+      </div>
+      <p class="card-hint">Si tus datos provienen de una versión anterior, convierte los estados viejos a los nuevos: pendiente → Apagado, en proceso → Sin acceso, verificado → Remediado, no reparable → Derivado. "Remediado" se mantiene como "Remediado". Aplica solo al hacer clic.</p>
+      <div class="bulk-actions">
+        <button type="button" id="btnMigrarEstados" class="btn btn-primary">Migrar estados ahora</button>
+      </div>
+    </div>
   </section>
 </main>
 
@@ -275,6 +355,7 @@
 <div id="toast" class="toast" role="status" aria-live="polite"></div>
 
 <script src="js/storage.js"></script>
+<script src="js/pdf.js"></script>
 <script src="js/gantt.js"></script>
 <script src="js/app.js"></script>
 </body>

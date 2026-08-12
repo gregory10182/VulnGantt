@@ -82,8 +82,6 @@ const Gantt = (() => {
     });
     if (!minDate) minDate = new Date(hoy);
     if (!maxDate || maxDate < minDate) maxDate = new Date(minDate);
-    minDate.setDate(minDate.getDate() - 2);
-    maxDate.setDate(maxDate.getDate() + 3);
 
     const built = buildColumns(minDate, maxDate);
     const cols = built.cols;
@@ -204,8 +202,6 @@ const Gantt = (() => {
     });
     if (!minDate) minDate = new Date(hoy);
     if (!maxDate || maxDate < minDate) maxDate = new Date(minDate);
-    minDate.setDate(minDate.getDate() - 2);
-    maxDate.setDate(maxDate.getDate() + 3);
 
     const built = buildColumns(minDate, maxDate);
     const cols = built.cols;
@@ -213,6 +209,7 @@ const Gantt = (() => {
     const N = cols.length;
 
     container.innerHTML = '';
+
     if (!items.length) {
       const d = document.createElement('div');
       d.className = 'eq-empty';
