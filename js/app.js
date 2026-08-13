@@ -312,16 +312,20 @@ function renderReportPreview() {
   const cerradas = vulns.filter(function (v) { return v.estado === 'cerrada'; }).length;
   const criticas = vulns.filter(function (v) { return v.severidad === 'critica'; }).length;
   const altas = vulns.filter(function (v) { return v.severidad === 'alta'; }).length;
-  const abiertasCriticas = vulns.filter(function (v) { return v.severidad === 'critica' && v.estado !== 'cerrada'; }).length;
+  const parque = buildInventario();
+  const equiposRemediados = parque.filter(function (it) { return (it.estados.remediado || 0) > 0; }).length;
+  const equiposRemediadosPct = parque.length ? Math.round(equiposRemediados / parque.length * 100) : 0;
   const pct = total ? Math.round(cerradas / total * 100) : 0;
   const kpi = function (label, value, sub, cls) {
     return '<div class="kpi ' + cls + '"><div class="kpi-val">' + value + '</div><div class="kpi-label">' + label + '</div><div class="kpi-sub">' + sub + '</div></div>';
   };
   $('#reportKpisPreview').innerHTML =
     kpi('Vulnerabilidades', total, criticas + ' críticas / ' + altas + ' altas', 'kpi-total') +
-    kpi('Remediadas / cerradas', cerradas, pct + '% de cierre', 'kpi-done') +
-    kpi('En curso', total - cerradas, 'etapas abiertas', 'kpi-proc') +
-    kpi('Críticas abiertas', abiertasCriticas, 'atención prioritaria', 'kpi-crit');
+    kpi('Críticas', criticas, 'del total', 'kpi-crit') +
+    kpi('En proceso', total - cerradas, 'abiertas', 'kpi-proc') +
+    kpi('Cerradas', cerradas, pct + '% del total', 'kpi-done') +
+    kpi('Equipos afectados (únicos)', parque.length, '', 'kpi-total') +
+    kpi('Equipos remediados', equiposRemediados + ' (' + equiposRemediadosPct + '%)', '', 'kpi-done');
   $('#reportMetaPreview').textContent = 'Emisión: ' + fmtFecha(hoyISO()) + ' | Ciclo: ' + reportCiclo() + ' | Cierre: ' + pct + '%';
 
   const sorted = vulns.slice().sort(function (a, b) {
@@ -1269,6 +1273,9 @@ function reportDataModel() {
     return (b.fecha_deteccion || '').localeCompare(a.fecha_deteccion || '');
   });
   const equipos = reportEquipmentTotals();
+  const parque = buildInventario();
+  const equiposRemediados = parque.filter(function (it) { return (it.estados.remediado || 0) > 0; }).length;
+  const equiposRemediadosPct = parque.length ? Math.round(equiposRemediados / parque.length * 100) : 0;
   return {
     vulns: vulns,
     sorted: sorted,
@@ -1279,8 +1286,12 @@ function reportDataModel() {
     medias: vulns.filter(function (v) { return v.severidad === 'media'; }).length,
     bajas: vulns.filter(function (v) { return v.severidad === 'baja'; }).length,
     cerradas: vulns.filter(function (v) { return v.estado === 'cerrada'; }).length,
+    enProceso: vulns.filter(function (v) { return v.estado !== 'cerrada'; }).length,
     criticasAbiertas: vulns.filter(function (v) { return v.severidad === 'critica' && v.estado !== 'cerrada'; }).length,
     equipos: equipos,
+    equiposAfectados: parque.length,
+    equiposRemediados: equiposRemediados,
+    equiposRemediadosPct: equiposRemediadosPct,
     pct: total ? Math.round(vulns.filter(function (v) { return v.estado === 'cerrada'; }).length / total * 100) : 0
   };
 }
@@ -1454,24 +1465,30 @@ function reportVisualHeading(doc, title, x) {
 
 function reportVisualKpis(doc, data, x, width) {
   const gap = 8;
-  const boxW = (width - gap * 3) / 4;
-  const boxH = 64;
+  const cols = 3;
+  const boxW = (width - gap * (cols - 1)) / cols;
+  const boxH = 58;
   const cards = [
-    ['Detectadas', data.total, data.criticas + ' críticas', RP.accent],
-    ['Cerradas', data.cerradas, data.pct + '%', RP.green],
-    ['En curso', data.total - data.cerradas, 'seguimiento', '0.055 0.647 0.914'],
-    ['Críticas abiertas', data.criticasAbiertas, 'prioridad', RP.red]
+    ['Vulnerabilidades', data.total, data.criticas + ' críticas / ' + data.altas + ' altas', RP.accent],
+    ['Críticas', data.criticas, 'del total', RP.red],
+    ['En proceso', data.enProceso, 'abiertas', '0.055 0.647 0.914'],
+    ['Cerradas', data.cerradas, data.pct + '% del total', RP.green],
+    ['Equipos afectados (únicos)', data.equiposAfectados, '', RP.accent],
+    ['Equipos remediados', data.equiposRemediados + ' (' + data.equiposRemediadosPct + '%)', '', RP.green]
   ];
-  doc.ensure(boxH + 16);
+  doc.ensure(boxH * 2 + gap + 16);
   cards.forEach(function (card, i) {
-    const bx = x + i * (boxW + gap);
-    doc.rect(bx, doc.y, boxW, boxH, card[3], card[3]);
-    doc.rect(bx + 1, doc.y + 1, boxW - 2, boxH - 2, '1 1 1');
-    doc.text(card[0].toUpperCase(), bx + 10, doc.y + 9, { font: 'F2', size: 6.7, color: RP.muted });
-    doc.text(String(card[1]), bx + 10, doc.y + 20, { font: 'F2', size: 20, color: RP.slate });
-    doc.text(card[2], bx + 10, doc.y + 46, { font: 'F1', size: 8, color: RP.muted });
+    const col = i % cols;
+    const row = Math.floor(i / cols);
+    const bx = x + col * (boxW + gap);
+    const by = doc.y + row * (boxH + gap);
+    doc.rect(bx, by, boxW, boxH, card[3], card[3]);
+    doc.rect(bx + 1, by + 1, boxW - 2, boxH - 2, '1 1 1');
+    doc.text(card[0].toUpperCase(), bx + 10, by + 8, { font: 'F2', size: 6.5, color: RP.muted });
+    doc.text(String(card[1]), bx + 10, by + 19, { font: 'F2', size: 18, color: RP.slate });
+    doc.text(card[2], bx + 10, by + 43, { font: 'F1', size: 7.5, color: RP.muted });
   });
-  doc.y += boxH + 16;
+  doc.y += boxH * 2 + gap + 16;
 }
 
 function reportBarChart(doc, title, items, x, width) {
