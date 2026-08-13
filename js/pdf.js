@@ -48,7 +48,7 @@ const PDFDoc = (() => {
   }
 
   function Doc() {
-    this.margin = 46;
+    this.margin = 28;
     this.pages = [[]];
     this.y = this.margin;
     this.f = 'F1';
@@ -141,6 +141,7 @@ const PDFDoc = (() => {
     const hS = opts.headSize || 7;
     const cS = opts.size || 9;
     const headBg = opts.headBg || '0.06 0.09 0.16';
+    const headFg = opts.headFg || '1 1 1';
     const zebra = opts.zebra || '0.945 0.955 0.97';
     const headH = 17;
 
@@ -166,10 +167,17 @@ const PDFDoc = (() => {
       self.rect(x0, self.y, totalW, headH, headBg);
       let x = x0;
       headers.forEach(function (h, i) {
-        self.text(String(h).toUpperCase(), x + pad, self.y + (headH - hS) / 2, { font: 'F2', size: hS, color: '1 1 1' });
+        self.text(String(h).toUpperCase(), x + pad, self.y + (headH - hS) / 2, { font: 'F2', size: hS, color: headFg });
         x += widths[i];
       });
       self.y += headH;
+    }
+
+    if (opts.keepTogether) {
+      const blockHeight = headH + rows.reduce(function (sum, cells) {
+        return sum + rowH(linesFor(cells));
+      }, 0) + 10;
+      if (blockHeight <= self.bottomLimit() - self.margin) self.ensure(blockHeight);
     }
 
     let needHeader = true;
@@ -187,8 +195,9 @@ const PDFDoc = (() => {
       if (ri % 2 === 1) self.rect(x0, self.y, totalW, rh, zebra);
       let x = x0;
       lns.forEach(function (lines, i) {
+        const cell = cellObj(cells[i]);
         lines.forEach(function (ln, li) {
-          self.text(ln, x + pad, self.y + pad + li * lineH, { font: 'F1', size: cS });
+          self.text(ln, x + pad, self.y + pad + li * lineH, { font: cell.b ? 'F2' : 'F1', size: cS, color: cell.c });
         });
         x += widths[i];
       });

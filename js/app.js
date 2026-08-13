@@ -60,7 +60,7 @@ function eqEstadoLabel(s) {
 let modalLastFocus = null;
 
 const state = {
-  data: { version: 1, vulnerabilidades: [] },
+  data: { version: 1, vulnerabilidades: [], informe: {} },
   selectedId: null,
   fileHandle: null,
   fileName: null,
@@ -99,6 +99,10 @@ function esc(s) {
 }
 function sanitizeData(data) {
   if (!data.vulnerabilidades) data.vulnerabilidades = [];
+  if (!data.informe || typeof data.informe !== 'object') data.informe = {};
+  ['resumen', 'vulnerabilidades', 'etapas', 'equipos', 'conclusiones'].forEach(function (key) {
+    if (typeof data.informe[key] !== 'string') data.informe[key] = '';
+  });
   data.vulnerabilidades.forEach(function (v) {
     if (!v.etapas || typeof v.etapas !== 'object') v.etapas = {};
     if (!Array.isArray(v.equipos)) v.equipos = [];
@@ -217,29 +221,169 @@ function selectVuln(id) {
 /* ---------------- Resumen ---------------- */
 
 function showDetailView() {
+  setNavMenu(false);
+  $('#main').classList.remove('report-mode');
   $('#summaryView').hidden = true;
+  $('#reportView').hidden = true;
   $('#inventoryView').hidden = true;
   $('#detail').hidden = false;
   $('#btnSummary').classList.remove('active');
   $('#btnInventory').classList.remove('active');
+  $('#btnReport').classList.remove('active');
 }
 
 function showSummary() {
+  setNavMenu(false);
+  $('#main').classList.remove('report-mode');
   $('#detail').hidden = true;
+  $('#reportView').hidden = true;
   $('#inventoryView').hidden = true;
   $('#summaryView').hidden = false;
   $('#btnSummary').classList.add('active');
   $('#btnInventory').classList.remove('active');
+  $('#btnReport').classList.remove('active');
   renderSummaryView();
 }
 
 function showInventory() {
+  setNavMenu(false);
+  $('#main').classList.remove('report-mode');
   $('#detail').hidden = true;
   $('#summaryView').hidden = true;
+  $('#reportView').hidden = true;
   $('#inventoryView').hidden = false;
   $('#btnSummary').classList.remove('active');
   $('#btnInventory').classList.add('active');
+  $('#btnReport').classList.remove('active');
   renderInventory();
+}
+
+function showReport() {
+  $('#main').classList.add('report-mode');
+  $('#detail').hidden = true;
+  $('#summaryView').hidden = true;
+  $('#inventoryView').hidden = true;
+  $('#reportView').hidden = false;
+  $('#btnSummary').classList.remove('active');
+  $('#btnInventory').classList.remove('active');
+  $('#btnReport').classList.add('active');
+  setNavMenu(false);
+  renderReportEditor();
+}
+
+function renderReportEditor() {
+  const informe = state.data.informe || {};
+  $('#reportResumen').value = informe.resumen || '';
+  $('#reportVulnerabilidades').value = informe.vulnerabilidades || '';
+  $('#reportEtapas').value = informe.etapas || '';
+  $('#reportEquipos').value = informe.equipos || '';
+  $('#reportConclusiones').value = informe.conclusiones || '';
+  renderReportPreview();
+}
+
+function reportEquipmentTotals() {
+  let rem = 0, pend = 0, der = 0, dec = 0;
+  state.data.vulnerabilidades.forEach(function (v) {
+    const counts = groupedEquipmentCounts(v);
+    rem += counts.rem;
+    pend += counts.pend;
+    der += counts.der;
+    dec += counts.dec;
+  });
+  return { rem: rem, pend: pend, der: der, dec: dec, total: rem + pend + der + dec };
+}
+
+function groupedEquipmentCounts(v) {
+  let rem = 0, pend = 0, der = 0, dec = 0;
+  v.equipos.forEach(function (eq) {
+    const s = eqEstadoNorm(eq.estado);
+    if (s === 'remediado') rem++;
+    else if (s === 'apagado' || s === 'sin_acceso') pend++;
+    else if (s === 'derivado') der++;
+    else if (s === 'decomisado') dec++;
+    else pend++;
+  });
+  return { rem: rem, pend: pend, der: der, dec: dec, total: v.equipos.length };
+}
+
+function renderReportPreview() {
+  const vulns = state.data.vulnerabilidades;
+  const total = vulns.length;
+  const cerradas = vulns.filter(function (v) { return v.estado === 'cerrada'; }).length;
+  const criticas = vulns.filter(function (v) { return v.severidad === 'critica'; }).length;
+  const altas = vulns.filter(function (v) { return v.severidad === 'alta'; }).length;
+  const abiertasCriticas = vulns.filter(function (v) { return v.severidad === 'critica' && v.estado !== 'cerrada'; }).length;
+  const pct = total ? Math.round(cerradas / total * 100) : 0;
+  const kpi = function (label, value, sub, cls) {
+    return '<div class="kpi ' + cls + '"><div class="kpi-val">' + value + '</div><div class="kpi-label">' + label + '</div><div class="kpi-sub">' + sub + '</div></div>';
+  };
+  $('#reportKpisPreview').innerHTML =
+    kpi('Vulnerabilidades', total, criticas + ' críticas / ' + altas + ' altas', 'kpi-total') +
+    kpi('Remediadas / cerradas', cerradas, pct + '% de cierre', 'kpi-done') +
+    kpi('En curso', total - cerradas, 'etapas abiertas', 'kpi-proc') +
+    kpi('Críticas abiertas', abiertasCriticas, 'atención prioritaria', 'kpi-crit');
+  $('#reportMetaPreview').textContent = 'Emisión: ' + fmtFecha(hoyISO()) + ' | Ciclo: ' + reportCiclo() + ' | Cierre: ' + pct + '%';
+
+  const sorted = vulns.slice().sort(function (a, b) {
+    const w = { critica: 0, alta: 1, media: 2, baja: 3 };
+    return (w[a.severidad] || 9) - (w[b.severidad] || 9);
+  });
+  $('#reportVulnPreview').innerHTML = sorted.length ? sorted.map(function (v) {
+    const sev = SEV[v.severidad] || SEV.media;
+    return '<tr><td>' + esc(v.titulo || 'Sin título') + '</td>' +
+      '<td><span class="badge ' + sev.cls + '">' + sev.label + '</span></td>' +
+      '<td>' + esc(etapaActualInfo(v).nombre) + '</td>' +
+      '<td>' + esc(fmtFecha(finGantt(v)) || '—') + '</td>' +
+      '<td>' + esc(estadoSLAReport(v)) + '</td></tr>';
+  }).join('') : '<tr><td colspan="5" class="eq-empty">No hay vulnerabilidades registradas.</td></tr>';
+
+  $('#reportEqVulnPreview').innerHTML = vulns.length ? vulns.map(function (v) {
+    const counts = groupedEquipmentCounts(v);
+    return '<tr><td>' + esc(v.titulo || 'Sin título') + '</td>' +
+      '<td class="num-ct">' + counts.rem + '</td>' +
+      '<td class="num-ct">' + counts.pend + '</td>' +
+      '<td class="num-ct">' + counts.der + '</td>' +
+      '<td class="num-ct">' + counts.dec + '</td>' +
+      '<td class="num-ct strong">' + counts.total + '</td></tr>';
+  }).join('') : '<tr><td colspan="6" class="eq-empty">No hay vulnerabilidades registradas.</td></tr>';
+
+  const eq = reportEquipmentTotals();
+  const eqRows = [
+    ['Remediados', eq.rem],
+    ['Pendientes', eq.pend],
+    ['Derivados', eq.der],
+    ['Decomisados', eq.dec],
+    ['Total', eq.total]
+  ];
+  $('#reportEquipmentPreview').innerHTML = eqRows.map(function (row, i) {
+    const percentage = eq.total && i < 4 ? Math.round(row[1] / eq.total * 100) + '%' : (i === 4 && eq.total ? '100%' : '—');
+    return '<tr' + (i === 4 ? ' class="strong"' : '') + '><td>' + row[0] + '</td><td class="num-ct">' + row[1] + '</td><td class="num-ct">' + percentage + '</td></tr>';
+  }).join('');
+}
+
+function saveReportTexts() {
+  state.data.informe = {
+    resumen: $('#reportResumen').value.trim(),
+    vulnerabilidades: $('#reportVulnerabilidades').value.trim(),
+    etapas: $('#reportEtapas').value.trim(),
+    equipos: $('#reportEquipos').value.trim(),
+    conclusiones: $('#reportConclusiones').value.trim()
+  };
+  persist();
+  flashMsg('Contenido del informe guardado');
+}
+
+function setNavMenu(open) {
+  const menu = $('#navMenu');
+  const button = $('#btnNavMenu');
+  menu.hidden = !open;
+  button.setAttribute('aria-expanded', String(open));
+  if (open) button.classList.add('open');
+  else button.classList.remove('open');
+  if (open) {
+    const first = menu.querySelector('.nav-item');
+    if (first) first.focus();
+  }
 }
 
 function etapaActualInfo(v) {
@@ -1021,6 +1165,63 @@ const RP = {
   orange: '0.91 0.42 0.04'
 };
 
+const REPORT_STYLES = {
+  consola: {
+    slate: '0.06 0.09 0.16',
+    muted: '0.42 0.46 0.52',
+    accent: '0.96 0.62 0.04',
+    light: '0.945 0.955 0.97',
+    bar: '0.89 0.91 0.94',
+    green: '0.13 0.55 0.24',
+    red: '0.86 0.15 0.15',
+    orange: '0.91 0.42 0.04'
+  },
+  ejecutivo: {
+    slate: '0.04 0.20 0.38',
+    muted: '0.36 0.43 0.52',
+    accent: '0.06 0.45 0.76',
+    light: '0.94 0.96 0.98',
+    bar: '0.86 0.90 0.95',
+    green: '0.06 0.55 0.32',
+    red: '0.78 0.16 0.17',
+    orange: '0.88 0.45 0.08'
+  },
+  minimal: {
+    slate: '0.16 0.18 0.21',
+    muted: '0.42 0.44 0.47',
+    accent: '0.12 0.43 0.48',
+    light: '0.96 0.96 0.95',
+    bar: '0.88 0.89 0.88',
+    green: '0.18 0.50 0.32',
+    red: '0.65 0.20 0.20',
+    orange: '0.65 0.45 0.12'
+  },
+  analitico: {
+    slate: '0.18 0.08 0.30',
+    muted: '0.43 0.39 0.52',
+    accent: '0.48 0.28 0.92',
+    light: '0.96 0.95 0.99',
+    bar: '0.89 0.86 0.96',
+    green: '0.08 0.58 0.38',
+    red: '0.83 0.17 0.35',
+    orange: '0.94 0.48 0.12'
+  },
+  semaforo: {
+    slate: '0.04 0.12 0.16',
+    muted: '0.35 0.45 0.48',
+    accent: '0.06 0.66 0.72',
+    light: '0.94 0.97 0.97',
+    bar: '0.86 0.91 0.91',
+    green: '0.08 0.58 0.34',
+    red: '0.82 0.17 0.17',
+    orange: '0.94 0.58 0.08'
+  }
+};
+
+function applyReportStyle(styleKey) {
+  Object.assign(RP, REPORT_STYLES[styleKey] || REPORT_STYLES.consola);
+}
+
 function slaRp(v) {
   const s = estadoSLAReport(v);
   if (s === 'Resuelto') return { t: s, c: RP.green, b: 1 };
@@ -1040,8 +1241,378 @@ function stackedBarRp(doc, x, y, w, h, segs) {
   });
 }
 
-function renderReportPdf() {
+function reportColumns(base, total) {
+  const sum = base.reduce(function (a, b) { return a + b; }, 0);
+  return base.map(function (value) { return value * total / sum; });
+}
+
+function reportAnalystText(doc, title, text, x, width) {
+  if (!text || !String(text).trim()) return;
+  doc.ensure(38);
+  doc.text(title, x, doc.y, { font: 'F2', size: 11, color: RP.slate });
+  doc.rect(x, doc.y + 14, 26, 2, RP.accent);
+  doc.y += 24;
+  String(text).split(/\r?\n/).forEach(function (line) {
+    if (line.trim()) doc.para(line.trim(), x, width, { size: 9.2, lineH: 13, gapAfter: 4 });
+    else doc.y += 5;
+  });
+  doc.y += 4;
+}
+
+function reportDataModel() {
   const vulns = state.data.vulnerabilidades;
+  const total = vulns.length;
+  const sorted = vulns.slice().sort(function (a, b) {
+    const w = { critica: 0, alta: 1, media: 2, baja: 3 };
+    const d = (w[a.severidad] || 9) - (w[b.severidad] || 9);
+    if (d !== 0) return d;
+    return (b.fecha_deteccion || '').localeCompare(a.fecha_deteccion || '');
+  });
+  const equipos = reportEquipmentTotals();
+  return {
+    vulns: vulns,
+    sorted: sorted,
+    informe: state.data.informe || {},
+    total: total,
+    criticas: vulns.filter(function (v) { return v.severidad === 'critica'; }).length,
+    altas: vulns.filter(function (v) { return v.severidad === 'alta'; }).length,
+    medias: vulns.filter(function (v) { return v.severidad === 'media'; }).length,
+    bajas: vulns.filter(function (v) { return v.severidad === 'baja'; }).length,
+    cerradas: vulns.filter(function (v) { return v.estado === 'cerrada'; }).length,
+    criticasAbiertas: vulns.filter(function (v) { return v.severidad === 'critica' && v.estado !== 'cerrada'; }).length,
+    equipos: equipos,
+    pct: total ? Math.round(vulns.filter(function (v) { return v.estado === 'cerrada'; }).length / total * 100) : 0
+  };
+}
+
+function reportStatusLabel(pct) {
+  return pct >= 80 ? 'En Cumplimiento' : (pct >= 50 ? 'En Riesgo' : 'En Incumplimiento');
+}
+
+function reportVulnRows(data) {
+  return data.sorted.map(function (v) {
+    const sev = SEV[v.severidad] || SEV.media;
+    return [
+      v.titulo || 'Sin título',
+      { t: sev.label, c: hexRgb(sev.color), b: 1 },
+      etapaActualInfo(v).nombre,
+      fmtFecha(finGantt(v)) || '—',
+      slaRp(v)
+    ];
+  });
+}
+
+function reportEquipmentRows(data) {
+  return data.vulns.map(function (v) {
+    const counts = groupedEquipmentCounts(v);
+    return [v.titulo || 'Sin título', String(counts.rem), String(counts.pend), String(counts.der), String(counts.dec), String(counts.total)];
+  });
+}
+
+function renderReportExecutive() {
+  const data = reportDataModel();
+  const doc = new PDFDoc.Doc();
+  doc.margin = 28;
+  doc.y = 0;
+  const x = doc.margin;
+  const W = PDFDoc.PW - doc.margin * 2;
+  const status = reportStatusLabel(data.pct);
+
+  doc.rect(0, 0, PDFDoc.PW, 118, RP.slate);
+  doc.rect(0, 118, PDFDoc.PW, 4, RP.accent);
+  doc.text('Informe Ejecutivo', x, 22, { font: 'F2', size: 24, color: '1 1 1' });
+  doc.text('Vulnerabilidades y control de remediación', x, 52, { font: 'F1', size: 11, color: '0.78 0.84 0.91' });
+  doc.text('VulnGantt  |  ' + fmtFecha(hoyISO()) + '  |  ' + reportCiclo(), x, 73, { font: 'F1', size: 9, color: '0.65 0.72 0.8' });
+  doc.text(status + ' (' + data.pct + '%)', PDFDoc.PW - x - doc.w(status + ' (' + data.pct + '%)', 'F2', 10), 75, { font: 'F2', size: 10, color: RP.accent });
+  doc.y = 142;
+
+  const gap = 10;
+  const bw = (W - gap) / 2;
+  const bh = 54;
+  [
+    ['Vulnerabilidades', data.total, data.criticas + ' críticas / ' + data.altas + ' altas', RP.accent],
+    ['Remediadas / cerradas', data.cerradas, data.pct + '% de cierre', RP.green],
+    ['En curso', data.total - data.cerradas, 'seguimiento requerido', '0.055 0.647 0.914'],
+    ['Críticas abiertas', data.criticasAbiertas, 'atención prioritaria', RP.red]
+  ].forEach(function (k, i) {
+    const col = i % 2;
+    const row = Math.floor(i / 2);
+    const bx = x + col * (bw + gap);
+    const by = doc.y + row * (bh + gap);
+    doc.rect(bx, by, bw, bh, RP.light, '0.82 0.85 0.9');
+    doc.rect(bx, by, 5, bh, k[3]);
+    doc.text(k[0].toUpperCase(), bx + 16, by + 10, { font: 'F2', size: 7, color: RP.muted });
+    doc.text(String(k[1]), bx + 16, by + 20, { font: 'F2', size: 20, color: RP.slate });
+    doc.text(k[2], bx + 86, by + 30, { font: 'F1', size: 8.5, color: RP.muted });
+  });
+  doc.y += bh * 2 + gap + 20;
+
+  reportAnalystText(doc, 'Resumen ejecutivo', data.informe.resumen, x, W);
+
+  doc.ensure(32);
+  doc.text('Panorama de severidad', x, doc.y, { font: 'F2', size: 12, color: RP.slate });
+  doc.y += 20;
+  stackedBarRp(doc, x, doc.y, W, 16, [
+    [data.criticas, hexRgb(SEV.critica.color)], [data.altas, hexRgb(SEV.alta.color)],
+    [data.medias, hexRgb(SEV.media.color)], [data.bajas, hexRgb(SEV.baja.color)]
+  ]);
+  doc.y += 23;
+  doc.table(['Vulnerabilidad', 'Severidad', 'Etapa actual', 'Fin compromiso', 'SLA'], reportColumns([216, 60, 84, 72, 71], W), reportVulnRows(data), { size: 8.5, headSize: 7, headBg: RP.slate, zebra: RP.light });
+  reportAnalystText(doc, 'Observaciones de vulnerabilidades', data.informe.vulnerabilidades, x, W);
+
+  doc.ensure(32);
+  doc.text('Estado por vulnerabilidad', x, doc.y, { font: 'F2', size: 12, color: RP.slate });
+  doc.y += 20;
+  doc.table(['Vulnerabilidad', 'Remediados', 'Pendientes', 'Derivados', 'Decomisados', 'Total'], reportColumns([211, 62, 62, 62, 66, 40], W), reportEquipmentRows(data), { size: 8.3, headSize: 6.8, headBg: RP.slate, zebra: RP.light });
+  reportAnalystText(doc, 'Observaciones del estado por vulnerabilidad', data.informe.etapas, x, W);
+
+  doc.ensure(180);
+  doc.text('Estado consolidado del parque', x, doc.y, { font: 'F2', size: 12, color: RP.slate });
+  doc.y += 20;
+  stackedBarRp(doc, x, doc.y, W, 18, [
+    [data.equipos.rem, hexRgb(ESTADOS_EQ_COLOR.remediado)],
+    [data.equipos.pend, hexRgb('#f59e0b')],
+    [data.equipos.der, hexRgb(ESTADOS_EQ_COLOR.derivado)],
+    [data.equipos.dec, hexRgb(ESTADOS_EQ_COLOR.decomisado)]
+  ]);
+  doc.y += 28;
+  doc.table(['Estado', 'Registros', '%'], reportColumns([343, 80, 80], W), [
+    ['Remediados', String(data.equipos.rem), data.equipos.total ? Math.round(data.equipos.rem / data.equipos.total * 100) + '%' : '0%'],
+    ['Pendientes', String(data.equipos.pend), data.equipos.total ? Math.round(data.equipos.pend / data.equipos.total * 100) + '%' : '0%'],
+    ['Derivados', String(data.equipos.der), data.equipos.total ? Math.round(data.equipos.der / data.equipos.total * 100) + '%' : '0%'],
+    ['Decomisados', String(data.equipos.dec), data.equipos.total ? Math.round(data.equipos.dec / data.equipos.total * 100) + '%' : '0%'],
+    ['Total', String(data.equipos.total), data.equipos.total ? '100%' : '—']
+  ], { size: 9, headSize: 7, headBg: RP.slate, zebra: RP.light, keepTogether: true });
+  reportAnalystText(doc, 'Observaciones del estado de equipos', data.informe.equipos, x, W);
+  reportAnalystText(doc, 'Conclusiones y recomendaciones', data.informe.conclusiones, x, W);
+  doc.save('Informe_vulnGantt_ejecutivo.pdf');
+}
+
+function renderReportMinimal() {
+  const data = reportDataModel();
+  const doc = new PDFDoc.Doc();
+  doc.margin = 24;
+  doc.y = 30;
+  const x = doc.margin;
+  const W = PDFDoc.PW - doc.margin * 2;
+  const status = reportStatusLabel(data.pct);
+
+  doc.text('Informe de vulnerabilidades', x, doc.y, { font: 'F2', size: 22, color: RP.slate });
+  doc.text('VulnGantt', PDFDoc.PW - x - doc.w('VulnGantt', 'F2', 10), doc.y + 3, { font: 'F2', size: 10, color: RP.accent });
+  doc.y += 31;
+  doc.hline(doc.y, x, x + W, RP.accent, 2);
+  doc.y += 12;
+  doc.text('Emisión: ' + fmtFecha(hoyISO()) + '   |   ' + reportCiclo() + '   |   ' + status + ' (' + data.pct + '%)', x, doc.y, { font: 'F1', size: 9, color: RP.muted });
+  doc.y += 22;
+
+  const metrics = [
+    ['Detectadas', data.total], ['Cerradas', data.cerradas], ['En curso', data.total - data.cerradas], ['Críticas abiertas', data.criticasAbiertas]
+  ];
+  const mw = W / metrics.length;
+  metrics.forEach(function (m, i) {
+    const mx = x + i * mw;
+    doc.text(m[0].toUpperCase(), mx, doc.y, { font: 'F2', size: 6.8, color: RP.muted });
+    doc.text(String(m[1]), mx, doc.y + 10, { font: 'F2', size: 18, color: RP.slate });
+    doc.hline(doc.y + 34, mx, mx + mw - 12, i === 3 ? RP.red : RP.accent, 1.2);
+  });
+  doc.y += 52;
+
+  reportAnalystText(doc, 'Resumen ejecutivo', data.informe.resumen, x, W);
+  doc.ensure(30);
+  doc.text('Vulnerabilidades', x, doc.y, { font: 'F2', size: 12, color: RP.slate });
+  doc.y += 18;
+  doc.table(['Vulnerabilidad', 'Severidad', 'Etapa', 'Fin', 'SLA'], reportColumns([236, 62, 90, 65, 50], W), reportVulnRows(data), { size: 8.3, headSize: 6.8, headBg: RP.light, headFg: RP.slate, zebra: '1 1 1' });
+  reportAnalystText(doc, 'Observaciones', data.informe.vulnerabilidades, x, W);
+
+  doc.ensure(30);
+  doc.text('Estado por vulnerabilidad', x, doc.y, { font: 'F2', size: 12, color: RP.slate });
+  doc.y += 18;
+  doc.table(['Vulnerabilidad', 'Rem.', 'Pend.', 'Der.', 'Dec.', 'Total'], reportColumns([250, 50, 55, 50, 55, 43], W), reportEquipmentRows(data), { size: 8.2, headSize: 6.8, headBg: RP.light, headFg: RP.slate, zebra: '1 1 1' });
+  reportAnalystText(doc, 'Observaciones', data.informe.etapas, x, W);
+
+  doc.ensure(140);
+  doc.text('Estado consolidado de equipos', x, doc.y, { font: 'F2', size: 12, color: RP.slate });
+  doc.y += 18;
+  doc.table(['Estado', 'Cantidad', '%'], reportColumns([350, 75, 75], W), [
+    ['Remediados', String(data.equipos.rem), data.equipos.total ? Math.round(data.equipos.rem / data.equipos.total * 100) + '%' : '0%'],
+    ['Pendientes', String(data.equipos.pend), data.equipos.total ? Math.round(data.equipos.pend / data.equipos.total * 100) + '%' : '0%'],
+    ['Derivados', String(data.equipos.der), data.equipos.total ? Math.round(data.equipos.der / data.equipos.total * 100) + '%' : '0%'],
+    ['Decomisados', String(data.equipos.dec), data.equipos.total ? Math.round(data.equipos.dec / data.equipos.total * 100) + '%' : '0%'],
+    ['Total', String(data.equipos.total), data.equipos.total ? '100%' : '—']
+  ], { size: 8.8, headSize: 6.8, headBg: RP.light, headFg: RP.slate, zebra: '1 1 1', keepTogether: true });
+  reportAnalystText(doc, 'Observaciones', data.informe.equipos, x, W);
+  reportAnalystText(doc, 'Conclusiones', data.informe.conclusiones, x, W);
+  doc.save('Informe_vulnGantt_minimal.pdf');
+}
+
+function reportVisualHeading(doc, title, x) {
+  doc.ensure(30);
+  doc.text(title, x, doc.y, { font: 'F2', size: 12, color: RP.slate });
+  doc.rect(x, doc.y + 15, 34, 3, RP.accent);
+  doc.y += 25;
+}
+
+function reportVisualKpis(doc, data, x, width) {
+  const gap = 8;
+  const boxW = (width - gap * 3) / 4;
+  const boxH = 64;
+  const cards = [
+    ['Detectadas', data.total, data.criticas + ' críticas', RP.accent],
+    ['Cerradas', data.cerradas, data.pct + '%', RP.green],
+    ['En curso', data.total - data.cerradas, 'seguimiento', '0.055 0.647 0.914'],
+    ['Críticas abiertas', data.criticasAbiertas, 'prioridad', RP.red]
+  ];
+  doc.ensure(boxH + 16);
+  cards.forEach(function (card, i) {
+    const bx = x + i * (boxW + gap);
+    doc.rect(bx, doc.y, boxW, boxH, card[3], card[3]);
+    doc.rect(bx + 1, doc.y + 1, boxW - 2, boxH - 2, '1 1 1');
+    doc.text(card[0].toUpperCase(), bx + 10, doc.y + 9, { font: 'F2', size: 6.7, color: RP.muted });
+    doc.text(String(card[1]), bx + 10, doc.y + 20, { font: 'F2', size: 20, color: RP.slate });
+    doc.text(card[2], bx + 10, doc.y + 46, { font: 'F1', size: 8, color: RP.muted });
+  });
+  doc.y += boxH + 16;
+}
+
+function reportBarChart(doc, title, items, x, width) {
+  doc.text(title, x, doc.y, { font: 'F2', size: 10.5, color: RP.slate });
+  doc.y += 19;
+  const max = Math.max.apply(null, items.map(function (item) { return item.count; }).concat([1]));
+  const labelW = 75;
+  const countW = 28;
+  const barW = width - labelW - countW - 8;
+  items.forEach(function (item) {
+    doc.text(item.label, x, doc.y + 2, { font: 'F1', size: 8.5, color: RP.muted });
+    doc.rect(x + labelW, doc.y + 2, barW, 10, RP.bar);
+    if (item.count) doc.rect(x + labelW, doc.y + 2, Math.max(barW * item.count / max, 2), 10, item.color);
+    doc.text(String(item.count), x + labelW + barW + 8, doc.y + 2, { font: 'F2', size: 8.5, color: RP.slate });
+    doc.y += 21;
+  });
+  doc.y += 7;
+}
+
+function reportStateChart(doc, data, x, width) {
+  doc.text('Estado consolidado de equipos', x, doc.y, { font: 'F2', size: 10.5, color: RP.slate });
+  doc.y += 19;
+  stackedBarRp(doc, x, doc.y, width, 16, [
+    [data.equipos.rem, hexRgb(ESTADOS_EQ_COLOR.remediado)],
+    [data.equipos.pend, hexRgb('#f59e0b')],
+    [data.equipos.der, hexRgb(ESTADOS_EQ_COLOR.derivado)],
+    [data.equipos.dec, hexRgb(ESTADOS_EQ_COLOR.decomisado)]
+  ]);
+  doc.y += 24;
+  [
+    ['Remediados', data.equipos.rem, hexRgb(ESTADOS_EQ_COLOR.remediado)],
+    ['Pendientes', data.equipos.pend, hexRgb('#f59e0b')],
+    ['Derivados', data.equipos.der, hexRgb(ESTADOS_EQ_COLOR.derivado)],
+    ['Decomisados', data.equipos.dec, hexRgb(ESTADOS_EQ_COLOR.decomisado)]
+  ].forEach(function (item) {
+    const pct = data.equipos.total ? Math.round(item[1] / data.equipos.total * 100) + '%' : '0%';
+    doc.rect(x, doc.y + 2, 7, 7, item[2]);
+    doc.text(item[0], x + 12, doc.y, { font: 'F1', size: 8.5 });
+    doc.text(String(item[1]), x + width - 58, doc.y, { font: 'F2', size: 8.5, color: RP.slate });
+    doc.text(pct, x + width - 28, doc.y, { font: 'F1', size: 8.5, color: RP.muted });
+    doc.y += 16;
+  });
+  doc.y += 7;
+}
+
+function renderReportAnalitico() {
+  const data = reportDataModel();
+  const doc = new PDFDoc.Doc();
+  doc.margin = 24;
+  doc.y = 0;
+  const x = doc.margin;
+  const W = PDFDoc.PW - doc.margin * 2;
+  doc.rect(0, 0, PDFDoc.PW, 84, RP.slate);
+  doc.rect(0, 84, PDFDoc.PW, 5, RP.accent);
+  doc.text('Panel analítico de vulnerabilidades', x, 20, { font: 'F2', size: 21, color: '1 1 1' });
+  doc.text('Lectura visual para seguimiento ejecutivo', x, 48, { font: 'F1', size: 10, color: '0.78 0.84 0.91' });
+  doc.text(fmtFecha(hoyISO()) + '  |  ' + reportCiclo(), PDFDoc.PW - x - doc.w(fmtFecha(hoyISO()) + '  |  ' + reportCiclo(), 'F1', 9), 50, { font: 'F1', size: 9, color: RP.accent });
+  doc.y = 108;
+  reportVisualKpis(doc, data, x, W);
+  reportAnalystText(doc, 'Resumen ejecutivo', data.informe.resumen, x, W);
+
+  doc.ensure(150);
+  const start = doc.y;
+  const colW = (W - 18) / 2;
+  reportBarChart(doc, 'Distribución por severidad', [
+    { label: 'Críticas', count: data.criticas, color: hexRgb(SEV.critica.color) },
+    { label: 'Altas', count: data.altas, color: hexRgb(SEV.alta.color) },
+    { label: 'Medias', count: data.medias, color: hexRgb(SEV.media.color) },
+    { label: 'Bajas', count: data.bajas, color: hexRgb(SEV.baja.color) }
+  ], x, colW);
+  const leftEnd = doc.y;
+  doc.y = start;
+  reportStateChart(doc, data, x + colW + 18, colW);
+  doc.y = Math.max(leftEnd, doc.y) + 10;
+
+  reportVisualHeading(doc, 'Detalle de vulnerabilidades', x);
+  doc.table(['Vulnerabilidad', 'Severidad', 'Etapa', 'Fin', 'SLA'], reportColumns([236, 62, 90, 65, 50], W), reportVulnRows(data), { size: 8.3, headSize: 6.8, headBg: RP.slate, zebra: RP.light });
+  reportAnalystText(doc, 'Observaciones de vulnerabilidades', data.informe.vulnerabilidades, x, W);
+  reportVisualHeading(doc, 'Estado por vulnerabilidad', x);
+  doc.table(['Vulnerabilidad', 'Rem.', 'Pend.', 'Der.', 'Dec.', 'Total'], reportColumns([250, 50, 55, 50, 55, 43], W), reportEquipmentRows(data), { size: 8.2, headSize: 6.8, headBg: RP.slate, zebra: RP.light });
+  reportAnalystText(doc, 'Observaciones del estado por vulnerabilidad', data.informe.etapas, x, W);
+  reportVisualHeading(doc, 'Cierre y próximos pasos', x);
+  reportAnalystText(doc, 'Conclusiones y recomendaciones', data.informe.conclusiones, x, W);
+  doc.save('Informe_vulnGantt_analitico.pdf');
+}
+
+function renderReportSemaforo() {
+  const data = reportDataModel();
+  const doc = new PDFDoc.Doc();
+  doc.margin = 24;
+  doc.y = 30;
+  const x = doc.margin;
+  const W = PDFDoc.PW - doc.margin * 2;
+  doc.rect(0, 0, PDFDoc.PW, 8, RP.accent);
+  doc.text('Semáforo ejecutivo', x, doc.y, { font: 'F2', size: 23, color: RP.slate });
+  doc.text('VulnGantt  |  ' + fmtFecha(hoyISO()) + '  |  ' + reportCiclo(), x, doc.y + 30, { font: 'F1', size: 9, color: RP.muted });
+  doc.y += 62;
+
+  const cards = [
+    ['CRÍTICAS ABIERTAS', data.criticasAbiertas, 'Riesgo', hexRgb('#dc2626')],
+    ['PENDIENTES', data.equipos.pend, 'Atención', hexRgb('#f59e0b')],
+    ['REMEDIADOS', data.equipos.rem, 'Controlado', hexRgb('#16a34a')],
+    ['CIERRE GLOBAL', data.pct + '%', reportStatusLabel(data.pct), hexRgb('#2563eb')]
+  ];
+  const gap = 8;
+  const cw = (W - gap * 3) / 4;
+  cards.forEach(function (card, i) {
+    const cx = x + i * (cw + gap);
+    doc.rect(cx, doc.y, cw, 74, card[3]);
+    doc.text(card[0], cx + 10, doc.y + 11, { font: 'F2', size: 6.5, color: '1 1 1' });
+    doc.text(String(card[1]), cx + 10, doc.y + 25, { font: 'F2', size: 22, color: '1 1 1' });
+    doc.text(card[2], cx + 10, doc.y + 53, { font: 'F1', size: 8.5, color: '1 1 1' });
+  });
+  doc.y += 94;
+
+  reportAnalystText(doc, 'Resumen ejecutivo', data.informe.resumen, x, W);
+  reportVisualHeading(doc, 'Distribución de control', x);
+  stackedBarRp(doc, x, doc.y, W, 22, [
+    [data.equipos.rem, hexRgb('#16a34a')], [data.equipos.pend, hexRgb('#f59e0b')],
+    [data.equipos.der, hexRgb('#0ea5e9')], [data.equipos.dec, hexRgb('#ef4444')]
+  ]);
+  doc.y += 32;
+  reportStateChart(doc, data, x, W);
+  reportVisualHeading(doc, 'Hallazgos y SLA', x);
+  doc.table(['Vulnerabilidad', 'Severidad', 'Etapa', 'Fin', 'SLA'], reportColumns([236, 62, 90, 65, 50], W), reportVulnRows(data), { size: 8.3, headSize: 6.8, headBg: RP.slate, zebra: RP.light });
+  reportAnalystText(doc, 'Observaciones de vulnerabilidades', data.informe.vulnerabilidades, x, W);
+  reportVisualHeading(doc, 'Estado por vulnerabilidad', x);
+  doc.table(['Vulnerabilidad', 'Rem.', 'Pend.', 'Der.', 'Dec.', 'Total'], reportColumns([250, 50, 55, 50, 55, 43], W), reportEquipmentRows(data), { size: 8.2, headSize: 6.8, headBg: RP.slate, zebra: RP.light });
+  reportAnalystText(doc, 'Observaciones del estado por vulnerabilidad', data.informe.etapas, x, W);
+  reportAnalystText(doc, 'Conclusiones y recomendaciones', data.informe.conclusiones, x, W);
+  doc.save('Informe_vulnGantt_semaforo.pdf');
+}
+
+function renderReportPdf(styleKey) {
+  applyReportStyle(styleKey || 'consola');
+  if (styleKey === 'ejecutivo') return renderReportExecutive();
+  if (styleKey === 'minimal') return renderReportMinimal();
+  if (styleKey === 'analitico') return renderReportAnalitico();
+  if (styleKey === 'semaforo') return renderReportSemaforo();
+  const vulns = state.data.vulnerabilidades;
+  const informe = state.data.informe || {};
   const total = vulns.length;
   const criticas = vulns.filter(function (v) { return v.severidad === 'critica'; }).length;
   const altas = vulns.filter(function (v) { return v.severidad === 'alta'; }).length;
@@ -1098,6 +1669,8 @@ function renderReportPdf() {
   });
   doc.y += kH + 16;
 
+  reportAnalystText(doc, 'Resumen ejecutivo', informe.resumen, x0, W);
+
   function seccion(t) {
     doc.ensure(40);
     doc.text(t, x0, doc.y, { font: 'F2', size: 12, color: RP.slate });
@@ -1129,7 +1702,7 @@ function renderReportPdf() {
   doc.y += 14;
   doc.table(
     ['Vulnerabilidad', 'Severidad', 'Etapa Gantt', 'Fin compromiso', 'Estado SLA'],
-    [216, 60, 84, 72, 71],
+    reportColumns([216, 60, 84, 72, 71], W),
     sorted.map(function (v) {
       const sev = SEV[v.severidad] || SEV.media;
       return [
@@ -1140,51 +1713,33 @@ function renderReportPdf() {
         slaRp(v)
       ];
     }),
-    { size: 8.5, headSize: 7 }
+    { size: 8.5, headSize: 7, headBg: RP.slate, zebra: RP.light, keepTogether: true }
   );
 
-  /* 2. Avance por etapa (según las etapas definidas en cada vulnerabilidad) */
-  seccion('2. Avance por etapa');
-  const colsE = [150, 60, 70, 50, 173];
-  const headsE = ['Etapa', 'En curso', 'Completadas', 'Avance %', 'Progreso'];
-  function headEtapas() {
-    doc.rect(x0, doc.y, W, 16, RP.slate);
-    let hx = x0;
-    headsE.forEach(function (h, i) {
-      doc.text(h.toUpperCase(), hx + 5, doc.y + 4.5, { font: 'F2', size: 7, color: '1 1 1' });
-      hx += colsE[i];
-    });
-    doc.y += 16;
-  }
-  const rowsE = ETAPAS.map(function (e) {
-    let cur = 0, done = 0;
-    vulns.forEach(function (v) {
-      const et = v.etapas[e.key];
-      if (!et) return;
-      if (et.fin && et.fin <= hoy) done++;
-      else if (et.inicio && et.inicio <= hoy) cur++;
-    });
-    return { nombre: e.nombre, cur: cur, done: done, avance: total ? Math.round(done / total * 100) : 0, color: hexRgb(e.color) };
-  });
-  headEtapas();
-  rowsE.forEach(function (e, i) {
-    if (doc.y + 20 > doc.bottomLimit()) {
-      doc.newPage();
-      headEtapas();
-    }
-    if (i % 2 === 1) doc.rect(x0, doc.y, W, 20, RP.light);
-    doc.text(e.nombre, x0 + 5, doc.y + 6, { font: 'F1', size: 8.5 });
-    doc.text(String(e.cur), x0 + 155, doc.y + 6, { font: 'F1', size: 8.5 });
-    doc.text(String(e.done), x0 + 215, doc.y + 6, { font: 'F1', size: 8.5 });
-    doc.text(e.avance + '%', x0 + 285, doc.y + 6, { font: 'F2', size: 8.5, color: RP.slate });
-    doc.rect(x0 + 335, doc.y + 6, 153, 8, RP.bar);
-    if (e.avance > 0) doc.rect(x0 + 335, doc.y + 6, Math.max(153 * e.avance / 100, 2), 8, e.color);
-    doc.hline(doc.y + 20, x0, x0 + W);
-    doc.y += 20;
-  });
-  doc.y += 10;
+  reportAnalystText(doc, 'Observaciones de vulnerabilidades', informe.vulnerabilidades, x0, W);
+
+  /* 2. Estado de equipos por vulnerabilidad */
+  seccion('2. Estado de equipos por vulnerabilidad');
+  doc.table(
+    ['Vulnerabilidad', 'Remediados', 'Pendientes', 'Derivados', 'Decomisados', 'Total'],
+    reportColumns([211, 62, 62, 62, 66, 40], W),
+    vulns.map(function (v) {
+      const counts = groupedEquipmentCounts(v);
+      return [
+        v.titulo || 'Sin título',
+        String(counts.rem),
+        String(counts.pend),
+        String(counts.der),
+        String(counts.dec),
+        String(counts.total)
+      ];
+    }),
+    { size: 8.3, headSize: 6.8, headBg: RP.slate, zebra: RP.light, keepTogether: true }
+  );
+  reportAnalystText(doc, 'Observaciones del estado por vulnerabilidad', informe.etapas, x0, W);
 
   /* 3. Estado de equipos */
+  doc.ensure(180);
   seccion('3. Estado de equipos');
   let rem = 0, pend = 0, der = 0, dec = 0;
   vulns.forEach(function (v) {
@@ -1223,11 +1778,16 @@ function renderReportPdf() {
     doc.y += 16;
   });
 
-  doc.save('Informe_vulnGantt.pdf');
+  reportAnalystText(doc, 'Observaciones del estado de equipos', informe.equipos, x0, W);
+  reportAnalystText(doc, 'Conclusiones y recomendaciones', informe.conclusiones, x0, W);
+
+  const fileName = styleKey && styleKey !== 'analitico' ? 'Informe_vulnGantt_' + styleKey + '.pdf' : 'Informe_vulnGantt.pdf';
+  doc.save(fileName);
 }
 
 function exportPdf() {
-  renderReportPdf();
+  if (!$('#reportView').hidden) saveReportTexts();
+  renderReportPdf('analitico');
 }
 
 /* ---------------- Eventos ---------------- */
@@ -1238,6 +1798,13 @@ function bindEvents() {
   $('#btnSave').addEventListener('click', saveToFile);
   $('#fileInput').addEventListener('change', handleFileInput);
   $('#searchInput').addEventListener('input', renderList);
+  $('#btnNavMenu').addEventListener('click', function () {
+    setNavMenu($('#navMenu').hidden);
+  });
+  $('#btnNavClose').addEventListener('click', function () {
+    setNavMenu(false);
+    $('#btnNavMenu').focus();
+  });
   $('#btnSummary').addEventListener('click', function () {
     if ($('#summaryView').hidden) {
       showSummary();
@@ -1245,7 +1812,25 @@ function bindEvents() {
       showDetailView();
     }
   });
-  $('#btnExportPdf').addEventListener('click', exportPdf);
+  document.addEventListener('click', function (e) {
+    if (!e.target.closest('.nav-menu-wrap')) setNavMenu(false);
+  });
+  document.addEventListener('keydown', function (e) {
+    if (e.key === 'Escape' && !$('#navMenu').hidden) {
+      e.preventDefault();
+      setNavMenu(false);
+      $('#btnNavMenu').focus();
+    }
+  });
+  $('#btnReport').addEventListener('click', function () {
+    if ($('#reportView').hidden) {
+      showReport();
+    } else {
+      showDetailView();
+    }
+  });
+  $('#btnSaveReport').addEventListener('click', saveReportTexts);
+  $('#btnExportReport').addEventListener('click', exportPdf);
   $('#btnInventory').addEventListener('click', function () {
     if ($('#inventoryView').hidden) {
       showInventory();

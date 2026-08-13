@@ -39,10 +39,31 @@
     <span id="saveStatus" class="save-status">Sin archivo asignado</span>
     <button id="btnNew" class="btn btn-primary">+ Nueva vulnerabilidad</button>
     <button id="btnOpen" class="btn">Abrir archivo</button>
-    <button id="btnSave" class="btn">Guardar archivo</button>
-    <button id="btnSummary" class="btn">Resumen</button>
-    <button id="btnInventory" class="btn">Inventario</button>
-    <button id="btnExportPdf" class="btn">Exportar PDF</button>
+      <button id="btnSave" class="btn">Guardar archivo</button>
+      <div class="nav-menu-wrap">
+        <button id="btnNavMenu" class="btn nav-menu-btn" aria-label="Abrir menú de secciones" aria-expanded="false" aria-controls="navMenu">☰ <span>Secciones</span></button>
+        <div id="navMenu" class="nav-menu" role="menu" hidden>
+          <div class="nav-menu-head">
+            <span>VISTAS DEL SISTEMA</span>
+            <button type="button" id="btnNavClose" class="nav-menu-close" aria-label="Cerrar menú">×</button>
+          </div>
+          <button type="button" id="btnSummary" class="nav-item" role="menuitem">
+            <span class="nav-index">01</span>
+            <span class="nav-copy"><strong>Resumen</strong><small>Indicadores y distribución</small></span>
+            <span class="nav-arrow">&gt;</span>
+          </button>
+          <button type="button" id="btnInventory" class="nav-item" role="menuitem">
+            <span class="nav-index">02</span>
+            <span class="nav-copy"><strong>Inventario</strong><small>Parque único de equipos</small></span>
+            <span class="nav-arrow">&gt;</span>
+          </button>
+          <button type="button" id="btnReport" class="nav-item" role="menuitem">
+            <span class="nav-index">03</span>
+            <span class="nav-copy"><strong>Informe</strong><small>Editor y exportación PDF</small></span>
+            <span class="nav-arrow">&gt;</span>
+          </button>
+        </div>
+      </div>
     <input type="file" id="fileInput" accept=".json,application/json" hidden>
   </div>
 </header>
@@ -252,6 +273,86 @@
         </thead>
         <tbody id="eqTotBody"></tbody>
       </table>
+    </div>
+  </section>
+
+  <section id="reportView" class="summary" hidden>
+    <div class="report-editor-head">
+      <div>
+        <p class="eyebrow">VULNGANTT // INFORME EJECUTIVO</p>
+        <h2>Editor del informe</h2>
+        <p class="card-hint">La plantilla sigue el orden del PDF. Los datos se actualizan automáticamente y los textos son editables por el analista.</p>
+      </div>
+      <div class="report-editor-actions">
+        <button type="button" id="btnSaveReport" class="btn btn-primary">Guardar textos</button>
+        <button type="button" id="btnExportReport" class="btn btn-report-download">Descargar informe PDF</button>
+      </div>
+    </div>
+
+    <div class="report-sheet">
+      <div class="report-cover-preview">
+        <div>
+          <span class="report-kicker">INFORME EJECUTIVO</span>
+          <h3>Informe Ejecutivo de Vulnerabilidades</h3>
+          <p>Plan de remediación, parcheo y control de SLA</p>
+        </div>
+        <div id="reportMetaPreview" class="report-meta-preview"></div>
+      </div>
+
+      <div id="reportKpisPreview" class="kpi-grid report-kpi-preview"></div>
+
+      <section id="reportSummaryBlock" class="report-editor-block">
+        <div class="report-block-title"><span>Resumen ejecutivo</span><em>Texto del analista</em></div>
+        <p class="report-auto-note">Este texto aparecerá después de los indicadores generales.</p>
+        <textarea id="reportResumen" rows="5" placeholder="Escribe aquí el resumen ejecutivo..."></textarea>
+      </section>
+
+      <section id="reportVulnBlock" class="report-editor-block">
+        <div class="report-block-title"><span>1. Vulnerabilidades</span><em>Datos automáticos</em></div>
+        <div class="report-preview-table-wrap">
+          <table class="sum-table report-preview-table" aria-label="Vista previa de vulnerabilidades del informe">
+            <thead><tr><th>Vulnerabilidad</th><th>Severidad</th><th>Etapa Gantt</th><th>Fin compromiso</th><th>Estado SLA</th></tr></thead>
+            <tbody id="reportVulnPreview"></tbody>
+          </table>
+        </div>
+        <label class="report-text-field">
+          <span>Observaciones de vulnerabilidades</span>
+          <textarea id="reportVulnerabilidades" rows="4" placeholder="Explica los hallazgos relevantes, riesgos o situaciones de SLA..."></textarea>
+        </label>
+      </section>
+
+      <section id="reportEqVulnBlock" class="report-editor-block">
+        <div class="report-block-title"><span>2. Estado de equipos por vulnerabilidad</span><em>Datos automáticos</em></div>
+        <div class="report-preview-table-wrap">
+          <table class="sum-table report-preview-table" aria-label="Vista previa del estado de equipos por vulnerabilidad">
+            <thead><tr><th>Vulnerabilidad</th><th>Remediados</th><th>Pendientes</th><th>Derivados</th><th>Decomisados</th><th>Total</th></tr></thead>
+            <tbody id="reportEqVulnPreview"></tbody>
+          </table>
+        </div>
+        <label class="report-text-field">
+          <span>Observaciones del estado por vulnerabilidad</span>
+          <textarea id="reportEtapas" rows="4" placeholder="Explica los riesgos, concentraciones de pendientes o vulnerabilidades prioritarias..."></textarea>
+        </label>
+      </section>
+
+      <section id="reportEqBlock" class="report-editor-block">
+        <div class="report-block-title"><span>3. Estado de equipos</span><em>Datos automáticos</em></div>
+        <div class="report-preview-table-wrap">
+          <table class="sum-table report-preview-table" aria-label="Vista previa del estado de equipos">
+            <thead><tr><th>Estado</th><th>Cantidad</th><th>%</th></tr></thead>
+            <tbody id="reportEquipmentPreview"></tbody>
+          </table>
+        </div>
+        <label class="report-text-field">
+          <span>Observaciones del estado de equipos</span>
+          <textarea id="reportEquipos" rows="4" placeholder="Explica la situación del parque, remediación y pendientes..."></textarea>
+        </label>
+      </section>
+
+      <section id="reportConclusionBlock" class="report-editor-block">
+        <div class="report-block-title"><span>Conclusiones y recomendaciones</span><em>Texto del analista</em></div>
+        <textarea id="reportConclusiones" rows="6" placeholder="Escribe las conclusiones, decisiones solicitadas y próximos pasos..."></textarea>
+      </section>
     </div>
   </section>
 
