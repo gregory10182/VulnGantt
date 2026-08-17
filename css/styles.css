@@ -633,6 +633,41 @@ strong { font-weight: 600; }
   outline: 2px solid var(--accent);
   outline-offset: -1px;
 }
+.initial-report-head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 18px;
+  padding: 20px;
+  border: 1px solid var(--line);
+  border-top: 4px solid #8b5cf6;
+  border-radius: var(--radius);
+  background: linear-gradient(135deg, rgba(139, 92, 246, .16), transparent 45%), var(--panel);
+  box-shadow: 0 12px 30px rgba(0, 0, 0, .2);
+}
+.initial-report-head h2 {
+  margin: 0 0 6px;
+  color: var(--text);
+  font: 700 23px var(--display);
+}
+.initial-report-head .card-hint { margin-bottom: 0; }
+.initial-kpis { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+.initial-chart-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 16px;
+}
+.initial-chart-grid .full { grid-column: 1 / -1; }
+.initial-chart-card { min-height: 220px; }
+.initial-bars { display: flex; flex-direction: column; gap: 14px; padding: 8px 2px; }
+.initial-bar-row { display: grid; grid-template-columns: 105px 1fr 42px; align-items: center; gap: 10px; }
+.initial-bar-label { color: var(--muted); font: 11px var(--mono); }
+.initial-bar-track { height: 13px; overflow: hidden; border: 1px solid var(--line); border-radius: 3px; background: var(--bg-2); }
+.initial-bar-fill { height: 100%; min-width: 2px; border-radius: 2px; }
+.initial-bar-value { color: var(--text); font: 700 12px var(--mono); text-align: right; }
+.initial-bars-wide { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); column-gap: 28px; }
+.initial-table-wrap { overflow-x: auto; }
+.initial-table-wrap .sum-table { min-width: 780px; }
 .eyebrow {
   margin: 0 0 6px;
   color: var(--accent);
@@ -1106,8 +1141,14 @@ strong { font-weight: 600; }
   .report-cover-preview { align-items: flex-start; flex-direction: column; }
   .report-meta-preview { max-width: none; text-align: left; }
   .kpi-grid.report-kpi-preview { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .initial-report-head { flex-direction: column; }
+  .initial-kpis { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .initial-bars-wide { grid-template-columns: 1fr; }
   .nav-menu { position: fixed; top: 66px; right: 12px; width: min(306px, calc(100vw - 24px)); }
 }
 @media (max-width: 560px) {
   .kpi-grid.report-kpi-preview { grid-template-columns: 1fr; }
+  .initial-kpis { grid-template-columns: 1fr; }
+  .initial-chart-grid { grid-template-columns: 1fr; }
+  .initial-chart-grid .full { grid-column: auto; }
 }

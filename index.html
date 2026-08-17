@@ -62,6 +62,11 @@
             <span class="nav-copy"><strong>Informe</strong><small>Editor y exportación PDF</small></span>
             <span class="nav-arrow">&gt;</span>
           </button>
+          <button type="button" id="btnInitialReport" class="nav-item" role="menuitem">
+            <span class="nav-index">04</span>
+            <span class="nav-copy"><strong>Informe inicial</strong><small>Línea base y gráficas</small></span>
+            <span class="nav-arrow">&gt;</span>
+          </button>
         </div>
       </div>
     <input type="file" id="fileInput" accept=".json,application/json" hidden>
@@ -353,6 +358,49 @@
         <div class="report-block-title"><span>Conclusiones y recomendaciones</span><em>Texto del analista</em></div>
         <textarea id="reportConclusiones" rows="6" placeholder="Escribe las conclusiones, decisiones solicitadas y próximos pasos..."></textarea>
       </section>
+    </div>
+  </section>
+
+  <section id="initialReportView" class="summary" hidden>
+    <div class="initial-report-head">
+      <div>
+        <p class="eyebrow">BASELINE // VULNERABILIDADES REPORTADAS</p>
+        <h2>Informe inicial</h2>
+        <p class="card-hint">Vista automática del estado inicial de las vulnerabilidades registradas en VulnGantt.</p>
+      </div>
+      <button type="button" id="btnExportInitialPdf" class="btn btn-primary">Descargar informe inicial PDF</button>
+    </div>
+
+    <div id="initialKpis" class="kpi-grid initial-kpis"></div>
+
+    <div class="initial-chart-grid">
+      <section class="card initial-chart-card">
+        <div class="card-head"><h3>Distribución por severidad</h3></div>
+        <div id="initialSeverityChart" class="initial-bars"></div>
+      </section>
+      <section class="card initial-chart-card">
+        <div class="card-head"><h3>Estado de vulnerabilidades</h3></div>
+        <div id="initialStatusChart" class="initial-bars"></div>
+      </section>
+      <section class="card initial-chart-card full">
+        <div class="card-head"><h3>Etapa actual del tratamiento</h3></div>
+        <div id="initialStageChart" class="initial-bars initial-bars-wide"></div>
+      </section>
+    </div>
+
+    <div class="card">
+      <div class="card-head"><h3>Cronograma inicial de remediación</h3></div>
+      <div id="initialGantt"></div>
+    </div>
+
+    <div class="card">
+      <div class="card-head"><h3>Registro completo de vulnerabilidades</h3></div>
+      <div class="initial-table-wrap">
+        <table class="sum-table" aria-label="Registro completo del informe inicial">
+          <thead><tr><th>Vulnerabilidad</th><th>Severidad</th><th>Estado</th><th>Etapa actual</th><th>Detección</th><th>Fin compromiso</th></tr></thead>
+          <tbody id="initialVulnBody"></tbody>
+        </table>
+      </div>
     </div>
   </section>
 

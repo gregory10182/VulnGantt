@@ -225,11 +225,13 @@ function showDetailView() {
   $('#main').classList.remove('report-mode');
   $('#summaryView').hidden = true;
   $('#reportView').hidden = true;
+  $('#initialReportView').hidden = true;
   $('#inventoryView').hidden = true;
   $('#detail').hidden = false;
   $('#btnSummary').classList.remove('active');
   $('#btnInventory').classList.remove('active');
   $('#btnReport').classList.remove('active');
+  $('#btnInitialReport').classList.remove('active');
 }
 
 function showSummary() {
@@ -237,11 +239,13 @@ function showSummary() {
   $('#main').classList.remove('report-mode');
   $('#detail').hidden = true;
   $('#reportView').hidden = true;
+  $('#initialReportView').hidden = true;
   $('#inventoryView').hidden = true;
   $('#summaryView').hidden = false;
   $('#btnSummary').classList.add('active');
   $('#btnInventory').classList.remove('active');
   $('#btnReport').classList.remove('active');
+  $('#btnInitialReport').classList.remove('active');
   renderSummaryView();
 }
 
@@ -251,22 +255,41 @@ function showInventory() {
   $('#detail').hidden = true;
   $('#summaryView').hidden = true;
   $('#reportView').hidden = true;
+  $('#initialReportView').hidden = true;
   $('#inventoryView').hidden = false;
   $('#btnSummary').classList.remove('active');
   $('#btnInventory').classList.add('active');
   $('#btnReport').classList.remove('active');
+  $('#btnInitialReport').classList.remove('active');
   renderInventory();
+}
+
+function showInitialReport() {
+  setNavMenu(false);
+  $('#main').classList.add('report-mode');
+  $('#detail').hidden = true;
+  $('#summaryView').hidden = true;
+  $('#reportView').hidden = true;
+  $('#inventoryView').hidden = true;
+  $('#initialReportView').hidden = false;
+  $('#btnSummary').classList.remove('active');
+  $('#btnInventory').classList.remove('active');
+  $('#btnReport').classList.remove('active');
+  $('#btnInitialReport').classList.add('active');
+  renderInitialReport();
 }
 
 function showReport() {
   $('#main').classList.add('report-mode');
   $('#detail').hidden = true;
   $('#summaryView').hidden = true;
+  $('#initialReportView').hidden = true;
   $('#inventoryView').hidden = true;
   $('#reportView').hidden = false;
   $('#btnSummary').classList.remove('active');
   $('#btnInventory').classList.remove('active');
   $('#btnReport').classList.add('active');
+  $('#btnInitialReport').classList.remove('active');
   setNavMenu(false);
   renderReportEditor();
 }
@@ -363,6 +386,177 @@ function renderReportPreview() {
     const percentage = eq.total && i < 4 ? Math.round(row[1] / eq.total * 100) + '%' : (i === 4 && eq.total ? '100%' : '—');
     return '<tr' + (i === 4 ? ' class="strong"' : '') + '><td>' + row[0] + '</td><td class="num-ct">' + row[1] + '</td><td class="num-ct">' + percentage + '</td></tr>';
   }).join('');
+}
+
+function initialReportData() {
+  const vulns = state.data.vulnerabilidades;
+  const stageCounts = {};
+  const statusCounts = {};
+  vulns.forEach(function (v) {
+    const stage = etapaActualInfo(v);
+    if (!stageCounts[stage.nombre]) stageCounts[stage.nombre] = { count: 0, color: stage.color };
+    stageCounts[stage.nombre].count++;
+    const key = v.estado || 'desconocido';
+    statusCounts[key] = (statusCounts[key] || 0) + 1;
+  });
+  const statusColors = {
+    abierta: '#f59e0b',
+    en_proceso: '#3b82f6',
+    en_revision: '#8b5cf6',
+    cerrada: '#16a34a',
+    sin_acceso: '#ef4444'
+  };
+  const statuses = Object.keys(statusCounts).map(function (key) {
+    return {
+      label: estadoLabel(ESTADOS_VULN, key),
+      count: statusCounts[key],
+      color: statusColors[key] || '#94a3b8'
+    };
+  });
+  const stages = Object.keys(stageCounts).map(function (label) {
+    return { label: label, count: stageCounts[label].count, color: stageCounts[label].color };
+  });
+  const parque = buildInventario();
+  const remediados = parque.filter(function (it) { return (it.estados.remediado || 0) > 0; }).length;
+  return {
+    vulns: vulns,
+    total: vulns.length,
+    criticas: vulns.filter(function (v) { return v.severidad === 'critica'; }).length,
+    enProceso: vulns.filter(function (v) { return v.estado !== 'cerrada'; }).length,
+    cerradas: vulns.filter(function (v) { return v.estado === 'cerrada'; }).length,
+    equipos: parque.length,
+    remediados: remediados,
+    remediadosPct: parque.length ? Math.round(remediados / parque.length * 100) : 0,
+    statuses: statuses,
+    stages: stages
+  };
+}
+
+function renderInitialBars(id, items) {
+  const el = $('#' + id);
+  if (!items.length) {
+    el.innerHTML = '<p class="eq-empty">No hay datos para mostrar.</p>';
+    return;
+  }
+  const max = Math.max.apply(null, items.map(function (item) { return item.count; }).concat([1]));
+  el.innerHTML = items.map(function (item) {
+    const width = Math.max(item.count / max * 100, item.count ? 2 : 0);
+    return '<div class="initial-bar-row"><span class="initial-bar-label">' + esc(item.label) + '</span>' +
+      '<span class="initial-bar-track"><span class="initial-bar-fill" style="width:' + width + '%;background:' + item.color + '"></span></span>' +
+      '<span class="initial-bar-value">' + item.count + '</span></div>';
+  }).join('');
+}
+
+function renderInitialReport() {
+  const data = initialReportData();
+  const pct = data.total ? Math.round(data.cerradas / data.total * 100) : 0;
+  const kpi = function (label, value, sub, cls) {
+    return '<div class="kpi ' + cls + '"><div class="kpi-val">' + value + '</div><div class="kpi-label">' + label + '</div><div class="kpi-sub">' + sub + '</div></div>';
+  };
+  $('#initialKpis').innerHTML =
+    kpi('Vulnerabilidades', data.total, 'reportadas', 'kpi-total') +
+    kpi('Críticas', data.criticas, 'prioridad alta', 'kpi-crit') +
+    kpi('En proceso', data.enProceso, 'abiertas', 'kpi-proc') +
+    kpi('Cerradas', data.cerradas, pct + '% del total', 'kpi-done') +
+    kpi('Equipos afectados', data.equipos, 'parque único', 'kpi-total') +
+    kpi('Equipos remediados', data.remediados + ' (' + data.remediadosPct + '%)', 'parque único', 'kpi-done');
+  renderInitialBars('initialSeverityChart', [
+    { label: 'Críticas', count: data.vulns.filter(function (v) { return v.severidad === 'critica'; }).length, color: '#dc2626' },
+    { label: 'Altas', count: data.vulns.filter(function (v) { return v.severidad === 'alta'; }).length, color: '#f97316' },
+    { label: 'Medias', count: data.vulns.filter(function (v) { return v.severidad === 'media'; }).length, color: '#eab308' },
+    { label: 'Bajas', count: data.vulns.filter(function (v) { return v.severidad === 'baja'; }).length, color: '#22c55e' }
+  ]);
+  renderInitialBars('initialStatusChart', data.statuses);
+  renderInitialBars('initialStageChart', data.stages);
+  const items = data.vulns.map(function (v) {
+    const rem = v.etapas.remediacion || {};
+    return { id: v.id, titulo: v.titulo || 'Sin título', color: (SEV[v.severidad] || SEV.media).color, inicio: rem.inicio || '', fin: rem.fin || '' };
+  });
+  Gantt.renderSummary($('#initialGantt'), items, { onSelect: selectVuln });
+  const sorted = data.vulns.slice().sort(function (a, b) {
+    const w = { critica: 0, alta: 1, media: 2, baja: 3 };
+    return (w[a.severidad] || 9) - (w[b.severidad] || 9);
+  });
+  $('#initialVulnBody').innerHTML = sorted.length ? sorted.map(function (v) {
+    const sev = SEV[v.severidad] || SEV.media;
+    return '<tr class="sum-row" data-id="' + esc(v.id) + '"><td class="sum-title">' + esc(v.titulo || 'Sin título') + '</td>' +
+      '<td><span class="badge ' + sev.cls + '">' + sev.label + '</span></td>' +
+      '<td>' + esc(estadoLabel(ESTADOS_VULN, v.estado)) + '</td>' +
+      '<td>' + esc(etapaActualInfo(v).nombre) + '</td>' +
+      '<td>' + esc(fmtFecha(v.fecha_deteccion) || '—') + '</td>' +
+      '<td>' + esc(fmtFecha(finGantt(v)) || '—') + '</td></tr>';
+  }).join('') : '<tr><td colspan="6" class="eq-empty">No hay vulnerabilidades registradas.</td></tr>';
+}
+
+function pdfDateValue(iso) {
+  if (!iso) return null;
+  const value = new Date(String(iso).slice(0, 10) + 'T00:00:00').getTime();
+  return Number.isNaN(value) ? null : value;
+}
+
+function drawInitialVulnGantt(doc, v, x, width) {
+  const cardH = 104;
+  doc.ensure(cardH + 8);
+  const top = doc.y;
+  const sev = SEV[v.severidad] || SEV.media;
+  const stageDates = ETAPAS.map(function (stage) {
+    const data = v.etapas[stage.key] || {};
+    const start = data.inicio || data.fin || '';
+    const end = data.fin || data.inicio || '';
+    return { stage: stage, inicio: start, fin: end, startValue: pdfDateValue(start), endValue: pdfDateValue(end) };
+  });
+  const dated = stageDates.filter(function (item) { return item.startValue !== null || item.endValue !== null; });
+  let min = null;
+  let max = null;
+  dated.forEach(function (item) {
+    const start = item.startValue === null ? item.endValue : item.startValue;
+    const end = item.endValue === null ? item.startValue : item.endValue;
+    if (start !== null && (min === null || start < min)) min = start;
+    if (end !== null && (max === null || end > max)) max = end;
+  });
+  if (min === null || max === null) {
+    min = 0;
+    max = 1;
+  }
+  if (max <= min) max = min + 86400000;
+  const dateX = x + 94;
+  const chartX = x + 104;
+  const chartW = width - 116;
+  const range = max - min;
+  const dayMs = 86400000;
+  const dayCount = Math.max(1, Math.round(range / dayMs) + 1);
+  const cellW = chartW / dayCount;
+  const dateFromValue = function (value) {
+    const date = new Date(value);
+    return date.getFullYear() + '-' + String(date.getMonth() + 1).padStart(2, '0') + '-' + String(date.getDate()).padStart(2, '0');
+  };
+
+  doc.rect(x, top, width, cardH, '0.97 0.98 0.99', '0.84 0.87 0.91');
+  doc.rect(x, top, 4, cardH, hexRgb(sev.color));
+  doc.text(v.titulo || 'Sin título', x + 12, top + 8, { font: 'F2', size: 9.5, color: RP.slate });
+  doc.text(sev.label + '  |  ' + etapaActualInfo(v).nombre, x + 12, top + 22, { font: 'F1', size: 7.5, color: RP.muted });
+  if (dated.length) {
+    doc.text(fmtFecha(dateFromValue(min)) + '  —  ' + fmtFecha(dateFromValue(max)), chartX, top + 20, { font: 'F1', size: 7, color: RP.muted });
+  } else {
+    doc.text('Sin fechas asignadas', chartX, top + 20, { font: 'F1', size: 7, color: RP.muted });
+  }
+  for (let day = 0; day < dayCount; day++) {
+    const date = new Date(min + day * dayMs);
+    const label = String(date.getDate()).padStart(2, '0');
+    if (cellW >= 6 || day % 7 === 0) {
+      doc.text(label, chartX + day * cellW + 1, top + 30, { font: 'F1', size: Math.min(5.2, Math.max(3.8, cellW - 1)), color: RP.muted });
+    }
+  }
+  stageDates.forEach(function (item, index) {
+    const rowTop = top + 40 + index * 12;
+    doc.text(item.stage.nombre, x + 12, rowTop + 1, { font: 'F1', size: 7.2, color: RP.ink });
+    for (let day = 0; day < dayCount; day++) {
+      const dateValue = min + day * dayMs;
+      const active = item.startValue !== null && item.endValue !== null && dateValue >= item.startValue && dateValue <= item.endValue;
+      doc.rect(chartX + day * cellW, rowTop, cellW, 8, active ? hexRgb(item.stage.color) : RP.bar, '0.82 0.84 0.88');
+    }
+  });
+  doc.y = top + cardH + 8;
 }
 
 function saveReportTexts() {
@@ -1622,6 +1816,76 @@ function renderReportSemaforo() {
   doc.save('Informe_vulnGantt_semaforo.pdf');
 }
 
+function renderInitialReportPdf() {
+  applyReportStyle('analitico');
+  const initial = initialReportData();
+  const eqTotals = reportEquipmentTotals();
+  const data = {
+    vulns: initial.vulns,
+    sorted: initial.vulns.slice().sort(function (a, b) {
+      const w = { critica: 0, alta: 1, media: 2, baja: 3 };
+      return (w[a.severidad] || 9) - (w[b.severidad] || 9);
+    }),
+    total: initial.total,
+    criticas: initial.criticas,
+    altas: initial.vulns.filter(function (v) { return v.severidad === 'alta'; }).length,
+    cerradas: initial.cerradas,
+    enProceso: initial.enProceso,
+    criticasAbiertas: initial.vulns.filter(function (v) { return v.severidad === 'critica' && v.estado !== 'cerrada'; }).length,
+    pct: initial.total ? Math.round(initial.cerradas / initial.total * 100) : 0,
+    equipos: eqTotals,
+    equiposAfectados: initial.equipos,
+    equiposRemediados: initial.remediados,
+    equiposRemediadosPct: initial.remediadosPct,
+    informe: {}
+  };
+  const doc = new PDFDoc.Doc();
+  doc.margin = 24;
+  doc.y = 0;
+  const x = doc.margin;
+  const W = PDFDoc.PW - doc.margin * 2;
+  doc.rect(0, 0, PDFDoc.PW, 88, RP.slate);
+  doc.rect(0, 88, PDFDoc.PW, 5, RP.accent);
+  doc.text('Informe inicial de vulnerabilidades', x, 20, { font: 'F2', size: 21, color: '1 1 1' });
+  doc.text('Línea base de hallazgos reportados en VulnGantt', x, 48, { font: 'F1', size: 10, color: '0.78 0.84 0.91' });
+  doc.text('Emisión: ' + fmtFecha(hoyISO()) + '  |  ' + reportCiclo(), x, 67, { font: 'F1', size: 9, color: RP.accent });
+  doc.y = 112;
+  reportVisualKpis(doc, data, x, W);
+
+  doc.ensure(150);
+  const start = doc.y;
+  const colW = (W - 18) / 2;
+  reportBarChart(doc, 'Severidad reportada', [
+    { label: 'Críticas', count: initial.criticas, color: hexRgb(SEV.critica.color) },
+    { label: 'Altas', count: data.altas, color: hexRgb(SEV.alta.color) },
+    { label: 'Medias', count: initial.vulns.filter(function (v) { return v.severidad === 'media'; }).length, color: hexRgb(SEV.media.color) },
+    { label: 'Bajas', count: initial.vulns.filter(function (v) { return v.severidad === 'baja'; }).length, color: hexRgb(SEV.baja.color) }
+  ], x, colW);
+  const leftEnd = doc.y;
+  doc.y = start;
+  reportBarChart(doc, 'Estado reportado', initial.statuses.map(function (item) {
+    return { label: item.label, count: item.count, color: hexRgb(item.color) };
+  }), x + colW + 18, colW);
+  doc.y = Math.max(leftEnd, doc.y) + 10;
+
+  reportVisualHeading(doc, 'Etapa actual del tratamiento', x);
+  reportBarChart(doc, 'Distribución por etapa actual', initial.stages.map(function (item) {
+    return { label: item.label, count: item.count, color: hexRgb(item.color) };
+  }), x, W);
+
+  reportVisualHeading(doc, 'Registro de vulnerabilidades', x);
+  doc.table(['Vulnerabilidad', 'Severidad', 'Etapa actual', 'Detección', 'Fin compromiso', 'Estado'], reportColumns([190, 58, 82, 62, 68, 79], W), initial.vulns.map(function (v) {
+    const sev = SEV[v.severidad] || SEV.media;
+    return [v.titulo || 'Sin título', { t: sev.label, c: hexRgb(sev.color), b: 1 }, etapaActualInfo(v).nombre, fmtFecha(v.fecha_deteccion) || '—', fmtFecha(finGantt(v)) || '—', slaRp(v)];
+  }), { size: 8.1, headSize: 6.7, headBg: RP.slate, zebra: RP.light });
+
+  reportVisualHeading(doc, 'Gantt individual por vulnerabilidad', x);
+  initial.vulns.forEach(function (v) {
+    drawInitialVulnGantt(doc, v, x, W);
+  });
+  doc.save('Informe_inicial_vulnGantt.pdf');
+}
+
 function renderReportPdf(styleKey) {
   applyReportStyle(styleKey || 'consola');
   if (styleKey === 'ejecutivo') return renderReportExecutive();
@@ -1846,6 +2110,14 @@ function bindEvents() {
       showDetailView();
     }
   });
+  $('#btnInitialReport').addEventListener('click', function () {
+    if ($('#initialReportView').hidden) {
+      showInitialReport();
+    } else {
+      showDetailView();
+    }
+  });
+  $('#btnExportInitialPdf').addEventListener('click', renderInitialReportPdf);
   $('#btnSaveReport').addEventListener('click', saveReportTexts);
   $('#btnExportReport').addEventListener('click', exportPdf);
   $('#btnInventory').addEventListener('click', function () {
@@ -1859,6 +2131,11 @@ function bindEvents() {
   $('#btnInvBulkUpd').addEventListener('click', invBulkUpdate);
   $('#btnMigrarEstados').addEventListener('click', function () {
     if (confirm('¿Migrar los estados viejos a los nuevos? Esta acción modifica los datos actuales.')) migrarEstadosViejos();
+  });
+
+  $('#initialVulnBody').addEventListener('click', function (e) {
+    const tr = e.target.closest('tr[data-id]');
+    if (tr) selectVuln(tr.dataset.id);
   });
 
   $('#sumBody').addEventListener('click', function (e) {
