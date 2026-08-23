@@ -481,11 +481,12 @@ function renderInitialReport() {
     const sev = SEV[v.severidad] || SEV.media;
     return '<tr class="sum-row" data-id="' + esc(v.id) + '"><td class="sum-title">' + esc(v.titulo || 'Sin título') + '</td>' +
       '<td><span class="badge ' + sev.cls + '">' + sev.label + '</span></td>' +
+      '<td class="num-ct">' + v.equipos.length + '</td>' +
       '<td>' + esc(estadoLabel(ESTADOS_VULN, v.estado)) + '</td>' +
       '<td>' + esc(etapaActualInfo(v).nombre) + '</td>' +
       '<td>' + esc(fmtFecha(v.fecha_deteccion) || '—') + '</td>' +
       '<td>' + esc(fmtFecha(finGantt(v)) || '—') + '</td></tr>';
-  }).join('') : '<tr><td colspan="6" class="eq-empty">No hay vulnerabilidades registradas.</td></tr>';
+  }).join('') : '<tr><td colspan="7" class="eq-empty">No hay vulnerabilidades registradas.</td></tr>';
 }
 
 function pdfDateValue(iso) {
@@ -1874,9 +1875,9 @@ function renderInitialReportPdf() {
   }), x, W);
 
   reportVisualHeading(doc, 'Registro de vulnerabilidades', x);
-  doc.table(['Vulnerabilidad', 'Severidad', 'Etapa actual', 'Detección', 'Fin compromiso', 'Estado'], reportColumns([190, 58, 82, 62, 68, 79], W), initial.vulns.map(function (v) {
+  doc.table(['Vulnerabilidad', 'Severidad', 'Equipos', 'Etapa actual', 'Detección', 'Fin compromiso', 'Estado'], reportColumns([180, 57, 45, 82, 62, 68, 53], W), initial.vulns.map(function (v) {
     const sev = SEV[v.severidad] || SEV.media;
-    return [v.titulo || 'Sin título', { t: sev.label, c: hexRgb(sev.color), b: 1 }, etapaActualInfo(v).nombre, fmtFecha(v.fecha_deteccion) || '—', fmtFecha(finGantt(v)) || '—', slaRp(v)];
+    return [v.titulo || 'Sin título', { t: sev.label, c: hexRgb(sev.color), b: 1 }, String(v.equipos.length), etapaActualInfo(v).nombre, fmtFecha(v.fecha_deteccion) || '—', fmtFecha(finGantt(v)) || '—', slaRp(v)];
   }), { size: 8.1, headSize: 6.7, headBg: RP.slate, zebra: RP.light });
 
   reportVisualHeading(doc, 'Gantt individual por vulnerabilidad', x);
