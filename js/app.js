@@ -42,6 +42,14 @@ const ESTADOS_EQ_LEGACY = {
   no_reparable: 'No reparable'
 };
 
+const ESTADOS_INCIDENTE = [
+  ['reportado', 'Reportado'],
+  ['pendiente_area', 'Pendiente del área'],
+  ['en_remediacion', 'En remediación'],
+  ['remediado', 'Remediado'],
+  ['cerrado', 'Cerrado']
+];
+
 const EQ_NORM = {
   pendiente: 'apagado',
   en_proceso: 'sin_acceso',
@@ -60,7 +68,7 @@ function eqEstadoLabel(s) {
 let modalLastFocus = null;
 
 const state = {
-  data: { version: 1, vulnerabilidades: [], informe: {} },
+  data: { version: 1, vulnerabilidades: [], informe: {}, incidentes: [] },
   selectedId: null,
   fileHandle: null,
   fileName: null,
@@ -70,7 +78,10 @@ const state = {
   selectedEqs: new Set(),
   lastEqVuln: null,
   eqFilter: '',
-  lastEqEstado: 'apagado'
+  lastEqEstado: 'apagado',
+  editingIncidentId: null,
+  incidentFilter: '',
+  incidentStatusFilter: ''
 };
 
 function $(sel) { return document.querySelector(sel); }
@@ -99,6 +110,7 @@ function esc(s) {
 }
 function sanitizeData(data) {
   if (!data.vulnerabilidades) data.vulnerabilidades = [];
+  if (!Array.isArray(data.incidentes)) data.incidentes = [];
   if (!data.informe || typeof data.informe !== 'object') data.informe = {};
   ['resumen', 'vulnerabilidades', 'etapas', 'equipos', 'conclusiones'].forEach(function (key) {
     if (typeof data.informe[key] !== 'string') data.informe[key] = '';
@@ -106,6 +118,22 @@ function sanitizeData(data) {
   data.vulnerabilidades.forEach(function (v) {
     if (!v.etapas || typeof v.etapas !== 'object') v.etapas = {};
     if (!Array.isArray(v.equipos)) v.equipos = [];
+  });
+  data.incidentes = data.incidentes.filter(function (i) { return i && typeof i === 'object'; });
+  data.incidentes.forEach(function (i) {
+    if (!i.id) i.id = uid();
+    if (typeof i.numero !== 'string') i.numero = '';
+    if (typeof i.equipo !== 'string') i.equipo = '';
+    if (typeof i.ip !== 'string') i.ip = '';
+    if (typeof i.vulnerabilidad_id !== 'string') i.vulnerabilidad_id = '';
+    if (typeof i.vulnerabilidad_titulo !== 'string') i.vulnerabilidad_titulo = '';
+    if (typeof i.area !== 'string') i.area = '';
+    if (!ESTADOS_INCIDENTE.some(function (e) { return e[0] === i.estado; })) i.estado = 'reportado';
+    if (typeof i.fecha_reporte !== 'string') i.fecha_reporte = '';
+    if (typeof i.fecha_compromiso !== 'string') i.fecha_compromiso = '';
+    if (typeof i.observaciones !== 'string') i.observaciones = '';
+    if (typeof i.creado !== 'string') i.creado = '';
+    if (typeof i.actualizado !== 'string') i.actualizado = '';
   });
   return data;
 }
@@ -227,9 +255,11 @@ function showDetailView() {
   $('#reportView').hidden = true;
   $('#initialReportView').hidden = true;
   $('#inventoryView').hidden = true;
+  $('#incidentsView').hidden = true;
   $('#detail').hidden = false;
   $('#btnSummary').classList.remove('active');
   $('#btnInventory').classList.remove('active');
+  $('#btnIncidents').classList.remove('active');
   $('#btnReport').classList.remove('active');
   $('#btnInitialReport').classList.remove('active');
 }
@@ -241,9 +271,11 @@ function showSummary() {
   $('#reportView').hidden = true;
   $('#initialReportView').hidden = true;
   $('#inventoryView').hidden = true;
+  $('#incidentsView').hidden = true;
   $('#summaryView').hidden = false;
   $('#btnSummary').classList.add('active');
   $('#btnInventory').classList.remove('active');
+  $('#btnIncidents').classList.remove('active');
   $('#btnReport').classList.remove('active');
   $('#btnInitialReport').classList.remove('active');
   renderSummaryView();
@@ -256,9 +288,11 @@ function showInventory() {
   $('#summaryView').hidden = true;
   $('#reportView').hidden = true;
   $('#initialReportView').hidden = true;
+  $('#incidentsView').hidden = true;
   $('#inventoryView').hidden = false;
   $('#btnSummary').classList.remove('active');
   $('#btnInventory').classList.add('active');
+  $('#btnIncidents').classList.remove('active');
   $('#btnReport').classList.remove('active');
   $('#btnInitialReport').classList.remove('active');
   renderInventory();
@@ -271,12 +305,31 @@ function showInitialReport() {
   $('#summaryView').hidden = true;
   $('#reportView').hidden = true;
   $('#inventoryView').hidden = true;
+  $('#incidentsView').hidden = true;
   $('#initialReportView').hidden = false;
   $('#btnSummary').classList.remove('active');
   $('#btnInventory').classList.remove('active');
+  $('#btnIncidents').classList.remove('active');
   $('#btnReport').classList.remove('active');
   $('#btnInitialReport').classList.add('active');
   renderInitialReport();
+}
+
+function showIncidents() {
+  setNavMenu(false);
+  $('#main').classList.add('report-mode');
+  $('#detail').hidden = true;
+  $('#summaryView').hidden = true;
+  $('#reportView').hidden = true;
+  $('#initialReportView').hidden = true;
+  $('#inventoryView').hidden = true;
+  $('#incidentsView').hidden = false;
+  $('#btnSummary').classList.remove('active');
+  $('#btnInventory').classList.remove('active');
+  $('#btnIncidents').classList.add('active');
+  $('#btnReport').classList.remove('active');
+  $('#btnInitialReport').classList.remove('active');
+  renderIncidents();
 }
 
 function showReport() {
@@ -285,9 +338,11 @@ function showReport() {
   $('#summaryView').hidden = true;
   $('#initialReportView').hidden = true;
   $('#inventoryView').hidden = true;
+  $('#incidentsView').hidden = true;
   $('#reportView').hidden = false;
   $('#btnSummary').classList.remove('active');
   $('#btnInventory').classList.remove('active');
+  $('#btnIncidents').classList.remove('active');
   $('#btnReport').classList.add('active');
   $('#btnInitialReport').classList.remove('active');
   setNavMenu(false);
@@ -979,6 +1034,174 @@ function invBulkUpdate() {
   $('#invUpdTextarea').value = '';
   renderInventory();
   flashMsg(estadoLabel(ESTADOS_EQ, estado) + ' aplicado a ' + encontrados.size + ' equipo(s) en ' + apariciones + ' registro(s)' + (sinCoincidencia ? ' · ' + sinCoincidencia + ' sin coincidencia' : ''));
+}
+
+/* ---------------- Incidentes Mac ---------------- */
+
+function incidenteResuelto(i) {
+  return i.estado === 'remediado' || i.estado === 'cerrado';
+}
+
+function incidenteVencido(i) {
+  return !!i.fecha_compromiso && i.fecha_compromiso < hoyISO() && !incidenteResuelto(i);
+}
+
+function incidenteVulnTitulo(i) {
+  const v = state.data.vulnerabilidades.find(function (item) { return item.id === i.vulnerabilidad_id; });
+  return v ? (v.titulo || 'Sin título') : (i.vulnerabilidad_titulo || 'Vulnerabilidad no disponible');
+}
+
+function renderIncidentVulnerabilityOptions(selectedId, selectedTitle) {
+  const select = $('#incidentVuln');
+  const current = selectedId !== undefined ? selectedId : select.value;
+  const options = state.data.vulnerabilidades.map(function (v) {
+    return '<option value="' + esc(v.id) + '">' + esc(v.titulo || 'Sin título') + '</option>';
+  });
+  const exists = state.data.vulnerabilidades.some(function (v) { return v.id === current; });
+  if (current && !exists) {
+    options.push('<option value="' + esc(current) + '">' + esc(selectedTitle || 'Vulnerabilidad no disponible') + ' (no disponible)</option>');
+  }
+  select.innerHTML = '<option value="">Selecciona una vulnerabilidad</option>' + options.join('');
+  select.value = current || '';
+}
+
+function incidenteEstadoBadge(estado) {
+  const key = ESTADOS_INCIDENTE.some(function (e) { return e[0] === estado; }) ? estado : 'reportado';
+  return '<span class="badge incident-status incident-status-' + key + '">' + esc(estadoLabel(ESTADOS_INCIDENTE, key)) + '</span>';
+}
+
+function renderIncidents() {
+  const incidents = state.data.incidentes;
+  const q = state.incidentFilter;
+  const status = state.incidentStatusFilter;
+  const filtered = incidents.filter(function (i) {
+    if (status && i.estado !== status) return false;
+    if (!q) return true;
+    const hay = [i.numero, i.equipo, i.ip, i.area, i.observaciones, incidenteVulnTitulo(i)].join(' ').toLowerCase();
+    return hay.indexOf(q) !== -1;
+  }).slice().sort(function (a, b) {
+    return (b.fecha_reporte || b.creado || '').localeCompare(a.fecha_reporte || a.creado || '');
+  });
+
+  const total = incidents.length;
+  const pendientes = incidents.filter(function (i) { return i.estado === 'pendiente_area'; }).length;
+  const enRemediacion = incidents.filter(function (i) { return i.estado === 'en_remediacion'; }).length;
+  const resueltos = incidents.filter(incidenteResuelto).length;
+  const vencidos = incidents.filter(incidenteVencido).length;
+  const kpi = function (label, value, sub, cls) {
+    return '<div class="kpi ' + cls + '"><div class="kpi-val">' + value + '</div><div class="kpi-label">' + label + '</div><div class="kpi-sub">' + sub + '</div></div>';
+  };
+  $('#incidentKpis').innerHTML =
+    kpi('Incidentes', total, 'registrados', 'kpi-total') +
+    kpi('Pendientes del área', pendientes, 'requieren atención', 'kpi-proc') +
+    kpi('En remediación', enRemediacion, 'en seguimiento', 'kpi-proc') +
+    kpi('Remediados / cerrados', resueltos, 'resueltos', 'kpi-done') +
+    kpi('Vencidos', vencidos, 'fuera de compromiso', 'kpi-crit');
+
+  renderIncidentVulnerabilityOptions();
+  if (!state.editingIncidentId && !$('#incidentFechaReporte').value) $('#incidentFechaReporte').value = hoyISO();
+  $('#incidentFilterCount').textContent = filtered.length + ' de ' + total + ' incidente(s)';
+
+  const tbody = $('#incidentBody');
+  tbody.innerHTML = '';
+  if (!filtered.length) {
+    const tr = document.createElement('tr');
+    const td = document.createElement('td');
+    td.colSpan = 9;
+    td.className = 'eq-empty';
+    td.textContent = total ? 'Ningún incidente coincide con los filtros.' : 'Aún no hay incidentes Mac registrados.';
+    tr.appendChild(td);
+    tbody.appendChild(tr);
+    return;
+  }
+  filtered.forEach(function (i) {
+    const compromiso = i.fecha_compromiso ? fmtFecha(i.fecha_compromiso) : '—';
+    const compromisoHtml = incidenteVencido(i)
+      ? '<span class="incident-overdue" title="Fecha compromiso vencida">' + esc(compromiso) + '</span>'
+      : esc(compromiso);
+    const tr = document.createElement('tr');
+    tr.innerHTML =
+      '<td><span class="incident-primary">' + esc(i.numero || 'Sin número') + '</span></td>' +
+      '<td><span class="incident-primary">' + esc(i.equipo || '—') + '</span>' +
+        (i.ip ? '<span class="incident-secondary">' + esc(i.ip) + '</span>' : '') + '</td>' +
+      '<td>' + esc(incidenteVulnTitulo(i)) + '</td>' +
+      '<td>' + esc(i.area || '—') + '</td>' +
+      '<td>' + incidenteEstadoBadge(i.estado) + '</td>' +
+      '<td>' + esc(fmtFecha(i.fecha_reporte) || '—') + '</td>' +
+      '<td>' + compromisoHtml + '</td>' +
+      '<td class="incident-notes" title="' + esc(i.observaciones || '') + '">' + esc(i.observaciones || '—') + '</td>' +
+      '<td class="incident-actions"><button type="button" class="btn btn-sm" data-action="edit" data-id="' + esc(i.id) + '">Editar</button> ' +
+        '<button type="button" class="btn btn-sm btn-danger" data-action="del" data-id="' + esc(i.id) + '">Eliminar</button></td>';
+    tbody.appendChild(tr);
+  });
+}
+
+function resetIncidentForm() {
+  state.editingIncidentId = null;
+  $('#incidentForm').reset();
+  renderIncidentVulnerabilityOptions('');
+  $('#incidentEstado').value = 'reportado';
+  $('#incidentFechaReporte').value = hoyISO();
+  $('#incidentSubmit').textContent = 'Registrar incidente';
+  $('#incidentCancel').hidden = true;
+  $('#incidentFormTitle').textContent = 'Registrar incidente';
+}
+
+function editIncident(id) {
+  const incident = state.data.incidentes.find(function (i) { return i.id === id; });
+  if (!incident) return;
+  state.editingIncidentId = id;
+  renderIncidentVulnerabilityOptions(incident.vulnerabilidad_id, incident.vulnerabilidad_titulo);
+  $('#incidentNumero').value = incident.numero || '';
+  $('#incidentEquipo').value = incident.equipo || '';
+  $('#incidentIp').value = incident.ip || '';
+  $('#incidentVuln').value = incident.vulnerabilidad_id || '';
+  $('#incidentArea').value = incident.area || '';
+  $('#incidentEstado').value = incident.estado || 'reportado';
+  $('#incidentFechaReporte').value = incident.fecha_reporte || '';
+  $('#incidentFechaCompromiso').value = incident.fecha_compromiso || '';
+  $('#incidentObservaciones').value = incident.observaciones || '';
+  $('#incidentFormTitle').textContent = 'Editar incidente';
+  $('#incidentSubmit').textContent = 'Guardar cambios';
+  $('#incidentCancel').hidden = false;
+  $('#incidentNumero').focus();
+}
+
+function saveIncidentFromForm() {
+  const numero = $('#incidentNumero').value.trim();
+  const equipo = $('#incidentEquipo').value.trim();
+  const vulnId = $('#incidentVuln').value;
+  const area = $('#incidentArea').value.trim();
+  const editing = !!state.editingIncidentId;
+  if (!numero || !equipo || !vulnId || !area) {
+    flashMsg('Completa ticket, equipo, vulnerabilidad y área responsable');
+    return;
+  }
+  const vuln = state.data.vulnerabilidades.find(function (v) { return v.id === vulnId; });
+  if (!vuln && !editing) {
+    flashMsg('La vulnerabilidad seleccionada ya no está disponible');
+    return;
+  }
+  const incident = editing
+    ? state.data.incidentes.find(function (i) { return i.id === state.editingIncidentId; })
+    : { id: uid(), creado: nowISO() };
+  if (!incident) return;
+  incident.numero = numero;
+  incident.equipo = equipo;
+  incident.ip = $('#incidentIp').value.trim();
+  incident.vulnerabilidad_id = vulnId;
+  incident.vulnerabilidad_titulo = vuln ? (vuln.titulo || 'Sin título') : (incident.vulnerabilidad_titulo || 'Vulnerabilidad no disponible');
+  incident.area = area;
+  incident.estado = $('#incidentEstado').value;
+  incident.fecha_reporte = $('#incidentFechaReporte').value || hoyISO();
+  incident.fecha_compromiso = $('#incidentFechaCompromiso').value || '';
+  incident.observaciones = $('#incidentObservaciones').value.trim();
+  incident.actualizado = nowISO();
+  if (!editing) state.data.incidentes.push(incident);
+  persist();
+  resetIncidentForm();
+  renderIncidents();
+  flashMsg(editing ? 'Incidente actualizado' : 'Incidente registrado');
 }
 
 function finGantt(v) {
@@ -2128,6 +2351,13 @@ function bindEvents() {
       showDetailView();
     }
   });
+  $('#btnIncidents').addEventListener('click', function () {
+    if ($('#incidentsView').hidden) {
+      showIncidents();
+    } else {
+      showDetailView();
+    }
+  });
   $('#invSearch').addEventListener('input', renderInventory);
   $('#btnInvBulkUpd').addEventListener('click', invBulkUpdate);
   $('#btnMigrarEstados').addEventListener('click', function () {
@@ -2137,6 +2367,41 @@ function bindEvents() {
   $('#initialVulnBody').addEventListener('click', function (e) {
     const tr = e.target.closest('tr[data-id]');
     if (tr) selectVuln(tr.dataset.id);
+  });
+
+  $('#btnIncidentNew').addEventListener('click', function () {
+    resetIncidentForm();
+    $('#incidentNumero').focus();
+  });
+  $('#incidentForm').addEventListener('submit', function (e) {
+    e.preventDefault();
+    saveIncidentFromForm();
+  });
+  $('#incidentCancel').addEventListener('click', function () {
+    resetIncidentForm();
+  });
+  $('#incidentSearch').addEventListener('input', function () {
+    state.incidentFilter = this.value.trim().toLowerCase();
+    renderIncidents();
+  });
+  $('#incidentStatusFilter').addEventListener('change', function () {
+    state.incidentStatusFilter = this.value;
+    renderIncidents();
+  });
+  $('#incidentBody').addEventListener('click', function (e) {
+    const btn = e.target.closest('button[data-action]');
+    if (!btn) return;
+    const incident = state.data.incidentes.find(function (i) { return i.id === btn.dataset.id; });
+    if (!incident) return;
+    if (btn.dataset.action === 'edit') {
+      editIncident(incident.id);
+    } else if (btn.dataset.action === 'del' && confirm('¿Eliminar el incidente "' + (incident.numero || 'Sin número') + '"?')) {
+      state.data.incidentes = state.data.incidentes.filter(function (i) { return i.id !== incident.id; });
+      if (state.editingIncidentId === incident.id) resetIncidentForm();
+      persist();
+      renderIncidents();
+      flashMsg('Incidente eliminado');
+    }
   });
 
   $('#sumBody').addEventListener('click', function (e) {

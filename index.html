@@ -4,10 +4,10 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>VulnGantt | Gantt de remediación de vulnerabilidades</title>
-<meta name="description" content="Gestiona la remediación de vulnerabilidades con diagramas Gantt por etapas (análisis, aprobación, remediación, seguimiento) e inventario de equipos afectados con su estado.">
+<meta name="description" content="Gestiona la remediación de vulnerabilidades con diagramas Gantt, inventario de equipos afectados y seguimiento de incidentes Mac derivados a otras áreas.">
 <meta name="robots" content="index, follow">
 <meta property="og:title" content="VulnGantt | Gantt de remediación de vulnerabilidades">
-<meta property="og:description" content="Diagramas Gantt por etapas e inventario de equipos para la remediación de vulnerabilidades.">
+<meta property="og:description" content="Diagramas Gantt por etapas, inventario de equipos e incidentes Mac derivados a otras áreas.">
 <meta property="og:type" content="website">
 <script type="application/ld+json">
 {
@@ -16,11 +16,12 @@
   "name": "VulnGantt",
   "applicationCategory": "BusinessApplication",
   "operatingSystem": "Web",
-  "description": "Herramienta local para gestionar la remediación de vulnerabilidades con diagramas Gantt por etapas e inventario de equipos afectados.",
+  "description": "Herramienta local para gestionar la remediación de vulnerabilidades, el inventario de equipos afectados y los incidentes Mac derivados.",
   "inLanguage": "es",
   "featureList": [
     "Diagramas Gantt con etapas de análisis, aprobación, remediación y seguimiento",
     "Inventario de equipos afectados con estado de remediación",
+    "Seguimiento de incidentes Mac derivados a otras áreas",
     "Vista resumen con indicadores y cronograma combinado",
     "Persistencia en archivo JSON"
   ]
@@ -57,13 +58,18 @@
             <span class="nav-copy"><strong>Inventario</strong><small>Parque único de equipos</small></span>
             <span class="nav-arrow">&gt;</span>
           </button>
-          <button type="button" id="btnReport" class="nav-item" role="menuitem">
+          <button type="button" id="btnIncidents" class="nav-item" role="menuitem">
             <span class="nav-index">03</span>
+            <span class="nav-copy"><strong>Incidentes Mac</strong><small>Seguimiento de terceros</small></span>
+            <span class="nav-arrow">&gt;</span>
+          </button>
+          <button type="button" id="btnReport" class="nav-item" role="menuitem">
+            <span class="nav-index">04</span>
             <span class="nav-copy"><strong>Informe</strong><small>Editor y exportación PDF</small></span>
             <span class="nav-arrow">&gt;</span>
           </button>
           <button type="button" id="btnInitialReport" class="nav-item" role="menuitem">
-            <span class="nav-index">04</span>
+            <span class="nav-index">05</span>
             <span class="nav-copy"><strong>Informe inicial</strong><small>Línea base y gráficas</small></span>
             <span class="nav-arrow">&gt;</span>
           </button>
@@ -278,6 +284,96 @@
         </thead>
         <tbody id="eqTotBody"></tbody>
       </table>
+    </div>
+  </section>
+
+  <section id="incidentsView" class="summary" hidden>
+    <div class="incident-head">
+      <div>
+        <p class="eyebrow">VULNGANTT // DERIVACIÓN OPERATIVA</p>
+        <h2>Incidentes Mac</h2>
+        <p class="card-hint">Registra los equipos macOS fuera del alcance del área y da seguimiento al incidente enviado al equipo responsable.</p>
+      </div>
+      <button type="button" id="btnIncidentNew" class="btn btn-primary">+ Nuevo incidente</button>
+    </div>
+
+    <div id="incidentKpis" class="kpi-grid incident-kpis"></div>
+
+    <div class="card">
+      <div class="card-head">
+        <h3 id="incidentFormTitle">Registrar incidente</h3>
+        <span class="badge badge-ghost">Equipo fuera de alcance</span>
+      </div>
+      <p class="card-hint">Asocia el incidente a la vulnerabilidad detectada e indica el área que debe atender el equipo Mac.</p>
+      <form id="incidentForm" class="incident-form">
+        <div class="form-grid incident-form-grid">
+          <label>Incidente / ticket *
+            <input type="text" id="incidentNumero" placeholder="Ej. INC-2026-001" required>
+          </label>
+          <label>Equipo Mac *
+            <input type="text" id="incidentEquipo" placeholder="Nombre del equipo *" required>
+          </label>
+          <label>IP / hostname
+            <input type="text" id="incidentIp" placeholder="IP o hostname">
+          </label>
+          <label>Vulnerabilidad *
+            <select id="incidentVuln" required>
+              <option value="">Selecciona una vulnerabilidad</option>
+            </select>
+          </label>
+          <label>Área responsable *
+            <input type="text" id="incidentArea" placeholder="Ej. Soporte Mac" required>
+          </label>
+          <label>Estado
+            <select id="incidentEstado">
+              <option value="reportado">Reportado</option>
+              <option value="pendiente_area">Pendiente del área</option>
+              <option value="en_remediacion">En remediación</option>
+              <option value="remediado">Remediado</option>
+              <option value="cerrado">Cerrado</option>
+            </select>
+          </label>
+          <label>Fecha de reporte
+            <input type="date" id="incidentFechaReporte" required>
+          </label>
+          <label>Fecha compromiso
+            <input type="date" id="incidentFechaCompromiso">
+          </label>
+          <label class="full">Observaciones
+            <textarea id="incidentObservaciones" rows="3" placeholder="Detalle del hallazgo, contacto o seguimiento con el área responsable..."></textarea>
+          </label>
+        </div>
+        <div class="incident-form-actions">
+          <button type="submit" class="btn btn-primary" id="incidentSubmit">Registrar incidente</button>
+          <button type="button" class="btn" id="incidentCancel" hidden>Cancelar edición</button>
+        </div>
+      </form>
+    </div>
+
+    <div class="card">
+      <div class="card-head">
+        <h3>Inventario de incidentes</h3>
+        <span id="incidentFilterCount" class="bulk-count"></span>
+      </div>
+      <div class="incident-filter">
+        <input type="search" id="incidentSearch" aria-label="Buscar incidentes" placeholder="Buscar por ticket, equipo, vulnerabilidad o área...">
+        <select id="incidentStatusFilter" aria-label="Filtrar incidentes por estado">
+          <option value="">Todos los estados</option>
+          <option value="reportado">Reportado</option>
+          <option value="pendiente_area">Pendiente del área</option>
+          <option value="en_remediacion">En remediación</option>
+          <option value="remediado">Remediado</option>
+          <option value="cerrado">Cerrado</option>
+        </select>
+      </div>
+      <div class="incident-table-wrap">
+        <table class="sum-table incident-table" aria-label="Inventario de incidentes de equipos Mac">
+          <thead>
+            <tr><th>Incidente</th><th>Equipo Mac</th><th>Vulnerabilidad</th><th>Área responsable</th><th>Estado</th><th>Reporte</th><th>Compromiso</th><th>Observaciones</th><th>Acciones</th></tr>
+          </thead>
+          <tbody id="incidentBody"></tbody>
+        </table>
+      </div>
     </div>
   </section>
 
