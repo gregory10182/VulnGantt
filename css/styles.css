@@ -686,7 +686,7 @@ strong { font-weight: 600; }
   font: 700 23px var(--display);
 }
 .incident-head .card-hint { margin-bottom: 0; }
-.incident-kpis { grid-template-columns: repeat(5, minmax(0, 1fr)); }
+.incident-kpis { grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); }
 .incident-form-grid { margin-top: 4px; }
 .incident-form-actions { display: flex; justify-content: flex-end; gap: 8px; margin-top: 16px; }
 .incident-filter {
@@ -712,7 +712,9 @@ strong { font-weight: 600; }
 .incident-filter input:focus,
 .incident-filter select:focus { outline: 2px solid var(--accent); outline-offset: -1px; }
 .incident-table-wrap { overflow-x: auto; }
-.incident-table { min-width: 1180px; }
+.incident-table { min-width: 1280px; }
+.ticket-platform-windows { background: #102b48; color: #7dc4ff; border: 1px solid rgba(59, 130, 246, .4); }
+.ticket-platform-mac { background: #2d1c3e; color: #d7a7ff; border: 1px solid rgba(168, 85, 247, .4); }
 .incident-primary { display: block; font-weight: 700; font-family: var(--display); }
 .incident-secondary { display: block; margin-top: 3px; color: var(--muted); font: 11px var(--mono); }
 .incident-notes { max-width: 260px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--muted); }

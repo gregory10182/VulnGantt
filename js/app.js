@@ -50,6 +50,11 @@ const ESTADOS_INCIDENTE = [
   ['cerrado', 'Cerrado']
 ];
 
+const PLATAFORMAS_TICKET = [
+  ['windows', 'Windows'],
+  ['mac', 'Mac']
+];
+
 const EQ_NORM = {
   pendiente: 'apagado',
   en_proceso: 'sin_acceso',
@@ -81,7 +86,8 @@ const state = {
   lastEqEstado: 'apagado',
   editingIncidentId: null,
   incidentFilter: '',
-  incidentStatusFilter: ''
+  incidentStatusFilter: '',
+  incidentPlatformFilter: ''
 };
 
 function $(sel) { return document.querySelector(sel); }
@@ -124,6 +130,7 @@ function sanitizeData(data) {
     if (!i.id) i.id = uid();
     if (typeof i.numero !== 'string') i.numero = '';
     if (typeof i.equipo !== 'string') i.equipo = '';
+    if (!PLATAFORMAS_TICKET.some(function (p) { return p[0] === i.plataforma; })) i.plataforma = 'mac';
     if (typeof i.ip !== 'string') i.ip = '';
     if (typeof i.vulnerabilidad_id !== 'string') i.vulnerabilidad_id = '';
     if (typeof i.vulnerabilidad_titulo !== 'string') i.vulnerabilidad_titulo = '';
@@ -1036,7 +1043,7 @@ function invBulkUpdate() {
   flashMsg(estadoLabel(ESTADOS_EQ, estado) + ' aplicado a ' + encontrados.size + ' equipo(s) en ' + apariciones + ' registro(s)' + (sinCoincidencia ? ' · ' + sinCoincidencia + ' sin coincidencia' : ''));
 }
 
-/* ---------------- Incidentes Mac ---------------- */
+/* ---------------- Tickets ---------------- */
 
 function incidenteResuelto(i) {
   return i.estado === 'remediado' || i.estado === 'cerrado';
@@ -1049,6 +1056,19 @@ function incidenteVencido(i) {
 function incidenteVulnTitulo(i) {
   const v = state.data.vulnerabilidades.find(function (item) { return item.id === i.vulnerabilidad_id; });
   return v ? (v.titulo || 'Sin título') : (i.vulnerabilidad_titulo || 'Vulnerabilidad no disponible');
+}
+
+function ticketPlataformaKey(plataforma) {
+  return PLATAFORMAS_TICKET.some(function (p) { return p[0] === plataforma; }) ? plataforma : 'mac';
+}
+
+function ticketPlataformaLabel(plataforma) {
+  return estadoLabel(PLATAFORMAS_TICKET, ticketPlataformaKey(plataforma));
+}
+
+function ticketPlataformaBadge(plataforma) {
+  const key = ticketPlataformaKey(plataforma);
+  return '<span class="badge ticket-platform ticket-platform-' + key + '">' + ticketPlataformaLabel(key) + '</span>';
 }
 
 function renderIncidentVulnerabilityOptions(selectedId, selectedTitle) {
@@ -1074,16 +1094,20 @@ function renderIncidents() {
   const incidents = state.data.incidentes;
   const q = state.incidentFilter;
   const status = state.incidentStatusFilter;
+  const platform = state.incidentPlatformFilter;
   const filtered = incidents.filter(function (i) {
     if (status && i.estado !== status) return false;
+    if (platform && ticketPlataformaKey(i.plataforma) !== platform) return false;
     if (!q) return true;
-    const hay = [i.numero, i.equipo, i.ip, i.area, i.observaciones, incidenteVulnTitulo(i)].join(' ').toLowerCase();
+    const hay = [i.numero, i.equipo, i.ip, i.area, i.observaciones, incidenteVulnTitulo(i), ticketPlataformaLabel(i.plataforma)].join(' ').toLowerCase();
     return hay.indexOf(q) !== -1;
   }).slice().sort(function (a, b) {
     return (b.fecha_reporte || b.creado || '').localeCompare(a.fecha_reporte || a.creado || '');
   });
 
   const total = incidents.length;
+  const windows = incidents.filter(function (i) { return ticketPlataformaKey(i.plataforma) === 'windows'; }).length;
+  const mac = incidents.filter(function (i) { return ticketPlataformaKey(i.plataforma) === 'mac'; }).length;
   const pendientes = incidents.filter(function (i) { return i.estado === 'pendiente_area'; }).length;
   const enRemediacion = incidents.filter(function (i) { return i.estado === 'en_remediacion'; }).length;
   const resueltos = incidents.filter(incidenteResuelto).length;
@@ -1092,7 +1116,9 @@ function renderIncidents() {
     return '<div class="kpi ' + cls + '"><div class="kpi-val">' + value + '</div><div class="kpi-label">' + label + '</div><div class="kpi-sub">' + sub + '</div></div>';
   };
   $('#incidentKpis').innerHTML =
-    kpi('Incidentes', total, 'registrados', 'kpi-total') +
+    kpi('Tickets', total, 'registrados', 'kpi-total') +
+    kpi('Windows', windows, 'por plataforma', 'kpi-total') +
+    kpi('Mac', mac, 'por plataforma', 'kpi-total') +
     kpi('Pendientes del área', pendientes, 'requieren atención', 'kpi-proc') +
     kpi('En remediación', enRemediacion, 'en seguimiento', 'kpi-proc') +
     kpi('Remediados / cerrados', resueltos, 'resueltos', 'kpi-done') +
@@ -1100,16 +1126,16 @@ function renderIncidents() {
 
   renderIncidentVulnerabilityOptions();
   if (!state.editingIncidentId && !$('#incidentFechaReporte').value) $('#incidentFechaReporte').value = hoyISO();
-  $('#incidentFilterCount').textContent = filtered.length + ' de ' + total + ' incidente(s)';
+  $('#incidentFilterCount').textContent = filtered.length + ' de ' + total + ' ticket(s)';
 
   const tbody = $('#incidentBody');
   tbody.innerHTML = '';
   if (!filtered.length) {
     const tr = document.createElement('tr');
     const td = document.createElement('td');
-    td.colSpan = 9;
+    td.colSpan = 10;
     td.className = 'eq-empty';
-    td.textContent = total ? 'Ningún incidente coincide con los filtros.' : 'Aún no hay incidentes Mac registrados.';
+    td.textContent = total ? 'Ningún ticket coincide con los filtros.' : 'Aún no hay tickets registrados.';
     tr.appendChild(td);
     tbody.appendChild(tr);
     return;
@@ -1122,6 +1148,7 @@ function renderIncidents() {
     const tr = document.createElement('tr');
     tr.innerHTML =
       '<td><span class="incident-primary">' + esc(i.numero || 'Sin número') + '</span></td>' +
+      '<td>' + ticketPlataformaBadge(i.plataforma) + '</td>' +
       '<td><span class="incident-primary">' + esc(i.equipo || '—') + '</span>' +
         (i.ip ? '<span class="incident-secondary">' + esc(i.ip) + '</span>' : '') + '</td>' +
       '<td>' + esc(incidenteVulnTitulo(i)) + '</td>' +
@@ -1142,9 +1169,10 @@ function resetIncidentForm() {
   renderIncidentVulnerabilityOptions('');
   $('#incidentEstado').value = 'reportado';
   $('#incidentFechaReporte').value = hoyISO();
-  $('#incidentSubmit').textContent = 'Registrar incidente';
+  $('#incidentPlataforma').value = 'mac';
+  $('#incidentSubmit').textContent = 'Registrar ticket';
   $('#incidentCancel').hidden = true;
-  $('#incidentFormTitle').textContent = 'Registrar incidente';
+  $('#incidentFormTitle').textContent = 'Registrar ticket';
 }
 
 function editIncident(id) {
@@ -1154,6 +1182,7 @@ function editIncident(id) {
   renderIncidentVulnerabilityOptions(incident.vulnerabilidad_id, incident.vulnerabilidad_titulo);
   $('#incidentNumero').value = incident.numero || '';
   $('#incidentEquipo').value = incident.equipo || '';
+  $('#incidentPlataforma').value = incident.plataforma || 'mac';
   $('#incidentIp').value = incident.ip || '';
   $('#incidentVuln').value = incident.vulnerabilidad_id || '';
   $('#incidentArea').value = incident.area || '';
@@ -1161,7 +1190,7 @@ function editIncident(id) {
   $('#incidentFechaReporte').value = incident.fecha_reporte || '';
   $('#incidentFechaCompromiso').value = incident.fecha_compromiso || '';
   $('#incidentObservaciones').value = incident.observaciones || '';
-  $('#incidentFormTitle').textContent = 'Editar incidente';
+  $('#incidentFormTitle').textContent = 'Editar ticket';
   $('#incidentSubmit').textContent = 'Guardar cambios';
   $('#incidentCancel').hidden = false;
   $('#incidentNumero').focus();
@@ -1188,6 +1217,7 @@ function saveIncidentFromForm() {
   if (!incident) return;
   incident.numero = numero;
   incident.equipo = equipo;
+  incident.plataforma = $('#incidentPlataforma').value;
   incident.ip = $('#incidentIp').value.trim();
   incident.vulnerabilidad_id = vulnId;
   incident.vulnerabilidad_titulo = vuln ? (vuln.titulo || 'Sin título') : (incident.vulnerabilidad_titulo || 'Vulnerabilidad no disponible');
@@ -1201,7 +1231,7 @@ function saveIncidentFromForm() {
   persist();
   resetIncidentForm();
   renderIncidents();
-  flashMsg(editing ? 'Incidente actualizado' : 'Incidente registrado');
+  flashMsg(editing ? 'Ticket actualizado' : 'Ticket registrado');
 }
 
 function finGantt(v) {
@@ -2384,6 +2414,10 @@ function bindEvents() {
     state.incidentFilter = this.value.trim().toLowerCase();
     renderIncidents();
   });
+  $('#incidentPlatformFilter').addEventListener('change', function () {
+    state.incidentPlatformFilter = this.value;
+    renderIncidents();
+  });
   $('#incidentStatusFilter').addEventListener('change', function () {
     state.incidentStatusFilter = this.value;
     renderIncidents();
@@ -2395,12 +2429,12 @@ function bindEvents() {
     if (!incident) return;
     if (btn.dataset.action === 'edit') {
       editIncident(incident.id);
-    } else if (btn.dataset.action === 'del' && confirm('¿Eliminar el incidente "' + (incident.numero || 'Sin número') + '"?')) {
+    } else if (btn.dataset.action === 'del' && confirm('¿Eliminar el ticket "' + (incident.numero || 'Sin número') + '"?')) {
       state.data.incidentes = state.data.incidentes.filter(function (i) { return i.id !== incident.id; });
       if (state.editingIncidentId === incident.id) resetIncidentForm();
       persist();
       renderIncidents();
-      flashMsg('Incidente eliminado');
+      flashMsg('Ticket eliminado');
     }
   });
 
