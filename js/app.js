@@ -132,8 +132,8 @@ function sanitizeData(data) {
     if (typeof i.equipo !== 'string') i.equipo = '';
     if (!PLATAFORMAS_TICKET.some(function (p) { return p[0] === i.plataforma; })) i.plataforma = 'mac';
     if (typeof i.ip !== 'string') i.ip = '';
-    if (typeof i.vulnerabilidad_id !== 'string') i.vulnerabilidad_id = '';
-    if (typeof i.vulnerabilidad_titulo !== 'string') i.vulnerabilidad_titulo = '';
+    delete i.vulnerabilidad_id;
+    delete i.vulnerabilidad_titulo;
     if (typeof i.area !== 'string') i.area = '';
     if (!ESTADOS_INCIDENTE.some(function (e) { return e[0] === i.estado; })) i.estado = 'reportado';
     if (typeof i.fecha_reporte !== 'string') i.fecha_reporte = '';
@@ -1053,11 +1053,6 @@ function incidenteVencido(i) {
   return !!i.fecha_compromiso && i.fecha_compromiso < hoyISO() && !incidenteResuelto(i);
 }
 
-function incidenteVulnTitulo(i) {
-  const v = state.data.vulnerabilidades.find(function (item) { return item.id === i.vulnerabilidad_id; });
-  return v ? (v.titulo || 'Sin título') : (i.vulnerabilidad_titulo || 'Vulnerabilidad no disponible');
-}
-
 function ticketPlataformaKey(plataforma) {
   return PLATAFORMAS_TICKET.some(function (p) { return p[0] === plataforma; }) ? plataforma : 'mac';
 }
@@ -1069,20 +1064,6 @@ function ticketPlataformaLabel(plataforma) {
 function ticketPlataformaBadge(plataforma) {
   const key = ticketPlataformaKey(plataforma);
   return '<span class="badge ticket-platform ticket-platform-' + key + '">' + ticketPlataformaLabel(key) + '</span>';
-}
-
-function renderIncidentVulnerabilityOptions(selectedId, selectedTitle) {
-  const select = $('#incidentVuln');
-  const current = selectedId !== undefined ? selectedId : select.value;
-  const options = state.data.vulnerabilidades.map(function (v) {
-    return '<option value="' + esc(v.id) + '">' + esc(v.titulo || 'Sin título') + '</option>';
-  });
-  const exists = state.data.vulnerabilidades.some(function (v) { return v.id === current; });
-  if (current && !exists) {
-    options.push('<option value="' + esc(current) + '">' + esc(selectedTitle || 'Vulnerabilidad no disponible') + ' (no disponible)</option>');
-  }
-  select.innerHTML = '<option value="">Selecciona una vulnerabilidad</option>' + options.join('');
-  select.value = current || '';
 }
 
 function incidenteEstadoBadge(estado) {
@@ -1099,7 +1080,7 @@ function renderIncidents() {
     if (status && i.estado !== status) return false;
     if (platform && ticketPlataformaKey(i.plataforma) !== platform) return false;
     if (!q) return true;
-    const hay = [i.numero, i.equipo, i.ip, i.area, i.observaciones, incidenteVulnTitulo(i), ticketPlataformaLabel(i.plataforma)].join(' ').toLowerCase();
+    const hay = [i.numero, i.equipo, i.ip, i.area, i.observaciones, ticketPlataformaLabel(i.plataforma)].join(' ').toLowerCase();
     return hay.indexOf(q) !== -1;
   }).slice().sort(function (a, b) {
     return (b.fecha_reporte || b.creado || '').localeCompare(a.fecha_reporte || a.creado || '');
@@ -1124,7 +1105,6 @@ function renderIncidents() {
     kpi('Remediados / cerrados', resueltos, 'resueltos', 'kpi-done') +
     kpi('Vencidos', vencidos, 'fuera de compromiso', 'kpi-crit');
 
-  renderIncidentVulnerabilityOptions();
   if (!state.editingIncidentId && !$('#incidentFechaReporte').value) $('#incidentFechaReporte').value = hoyISO();
   $('#incidentFilterCount').textContent = filtered.length + ' de ' + total + ' ticket(s)';
 
@@ -1133,7 +1113,7 @@ function renderIncidents() {
   if (!filtered.length) {
     const tr = document.createElement('tr');
     const td = document.createElement('td');
-    td.colSpan = 10;
+    td.colSpan = 9;
     td.className = 'eq-empty';
     td.textContent = total ? 'Ningún ticket coincide con los filtros.' : 'Aún no hay tickets registrados.';
     tr.appendChild(td);
@@ -1151,7 +1131,6 @@ function renderIncidents() {
       '<td>' + ticketPlataformaBadge(i.plataforma) + '</td>' +
       '<td><span class="incident-primary">' + esc(i.equipo || '—') + '</span>' +
         (i.ip ? '<span class="incident-secondary">' + esc(i.ip) + '</span>' : '') + '</td>' +
-      '<td>' + esc(incidenteVulnTitulo(i)) + '</td>' +
       '<td>' + esc(i.area || '—') + '</td>' +
       '<td>' + incidenteEstadoBadge(i.estado) + '</td>' +
       '<td>' + esc(fmtFecha(i.fecha_reporte) || '—') + '</td>' +
@@ -1166,7 +1145,6 @@ function renderIncidents() {
 function resetIncidentForm() {
   state.editingIncidentId = null;
   $('#incidentForm').reset();
-  renderIncidentVulnerabilityOptions('');
   $('#incidentEstado').value = 'reportado';
   $('#incidentFechaReporte').value = hoyISO();
   $('#incidentPlataforma').value = 'mac';
@@ -1179,12 +1157,10 @@ function editIncident(id) {
   const incident = state.data.incidentes.find(function (i) { return i.id === id; });
   if (!incident) return;
   state.editingIncidentId = id;
-  renderIncidentVulnerabilityOptions(incident.vulnerabilidad_id, incident.vulnerabilidad_titulo);
   $('#incidentNumero').value = incident.numero || '';
   $('#incidentEquipo').value = incident.equipo || '';
   $('#incidentPlataforma').value = incident.plataforma || 'mac';
   $('#incidentIp').value = incident.ip || '';
-  $('#incidentVuln').value = incident.vulnerabilidad_id || '';
   $('#incidentArea').value = incident.area || '';
   $('#incidentEstado').value = incident.estado || 'reportado';
   $('#incidentFechaReporte').value = incident.fecha_reporte || '';
@@ -1199,16 +1175,10 @@ function editIncident(id) {
 function saveIncidentFromForm() {
   const numero = $('#incidentNumero').value.trim();
   const equipo = $('#incidentEquipo').value.trim();
-  const vulnId = $('#incidentVuln').value;
   const area = $('#incidentArea').value.trim();
   const editing = !!state.editingIncidentId;
-  if (!numero || !equipo || !vulnId || !area) {
-    flashMsg('Completa ticket, equipo, vulnerabilidad y área responsable');
-    return;
-  }
-  const vuln = state.data.vulnerabilidades.find(function (v) { return v.id === vulnId; });
-  if (!vuln && !editing) {
-    flashMsg('La vulnerabilidad seleccionada ya no está disponible');
+  if (!numero || !equipo || !area) {
+    flashMsg('Completa ticket, equipo y área responsable');
     return;
   }
   const incident = editing
@@ -1219,8 +1189,6 @@ function saveIncidentFromForm() {
   incident.equipo = equipo;
   incident.plataforma = $('#incidentPlataforma').value;
   incident.ip = $('#incidentIp').value.trim();
-  incident.vulnerabilidad_id = vulnId;
-  incident.vulnerabilidad_titulo = vuln ? (vuln.titulo || 'Sin título') : (incident.vulnerabilidad_titulo || 'Vulnerabilidad no disponible');
   incident.area = area;
   incident.estado = $('#incidentEstado').value;
   incident.fecha_reporte = $('#incidentFechaReporte').value || hoyISO();

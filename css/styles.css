@@ -712,7 +712,7 @@ strong { font-weight: 600; }
 .incident-filter input:focus,
 .incident-filter select:focus { outline: 2px solid var(--accent); outline-offset: -1px; }
 .incident-table-wrap { overflow-x: auto; }
-.incident-table { min-width: 1280px; }
+.incident-table { min-width: 1180px; }
 .ticket-platform-windows { background: #102b48; color: #7dc4ff; border: 1px solid rgba(59, 130, 246, .4); }
 .ticket-platform-mac { background: #2d1c3e; color: #d7a7ff; border: 1px solid rgba(168, 85, 247, .4); }
 .incident-primary { display: block; font-weight: 700; font-family: var(--display); }

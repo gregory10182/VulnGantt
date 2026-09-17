@@ -304,7 +304,7 @@
         <h3 id="incidentFormTitle">Registrar ticket</h3>
         <span class="badge badge-ghost">Windows / Mac</span>
       </div>
-      <p class="card-hint">Asocia el ticket a la vulnerabilidad detectada, selecciona la plataforma e indica el área responsable.</p>
+      <p class="card-hint">Registra la plataforma, el equipo y el área responsable para dar seguimiento al ticket.</p>
       <form id="incidentForm" class="incident-form">
         <div class="form-grid incident-form-grid">
           <label>Ticket *
@@ -321,11 +321,6 @@
           </label>
           <label>IP / hostname
             <input type="text" id="incidentIp" placeholder="IP o hostname">
-          </label>
-          <label>Vulnerabilidad *
-            <select id="incidentVuln" required>
-              <option value="">Selecciona una vulnerabilidad</option>
-            </select>
           </label>
           <label>Área responsable *
             <input type="text" id="incidentArea" placeholder="Ej. Soporte de plataformas" required>
@@ -362,7 +357,7 @@
         <span id="incidentFilterCount" class="bulk-count"></span>
       </div>
       <div class="incident-filter">
-        <input type="search" id="incidentSearch" aria-label="Buscar tickets" placeholder="Buscar por ticket, equipo, vulnerabilidad o área...">
+        <input type="search" id="incidentSearch" aria-label="Buscar tickets" placeholder="Buscar por ticket, equipo o área...">
         <select id="incidentPlatformFilter" aria-label="Filtrar tickets por plataforma">
           <option value="">Todas las plataformas</option>
           <option value="windows">Windows</option>
@@ -380,7 +375,7 @@
       <div class="incident-table-wrap">
         <table class="sum-table incident-table" aria-label="Inventario de tickets de equipos Windows y Mac">
           <thead>
-            <tr><th>Ticket</th><th>Plataforma</th><th>Equipo</th><th>Vulnerabilidad</th><th>Área responsable</th><th>Estado</th><th>Reporte</th><th>Compromiso</th><th>Observaciones</th><th>Acciones</th></tr>
+            <tr><th>Ticket</th><th>Plataforma</th><th>Equipo</th><th>Área responsable</th><th>Estado</th><th>Reporte</th><th>Compromiso</th><th>Observaciones</th><th>Acciones</th></tr>
           </thead>
           <tbody id="incidentBody"></tbody>
         </table>
