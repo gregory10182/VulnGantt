@@ -206,6 +206,7 @@
             <option value="derivado">Derivado</option>
           </select>
           <button type="button" id="btnBulkEstado" class="btn btn-sm">Aplicar estado</button>
+          <button type="button" id="btnCopySelected" class="btn btn-sm" disabled>Copiar seleccionados</button>
           <button type="button" id="btnBulkDelete" class="btn btn-sm btn-danger">Eliminar seleccionados</button>
           <button type="button" id="btnBulkClear" class="btn btn-sm">Limpiar</button>
         </div>
@@ -337,7 +338,7 @@
           <label>Fecha de reporte
             <input type="date" id="incidentFechaReporte" required>
           </label>
-          <label>Fecha compromiso
+          <label>Compromiso de resolución
             <input type="date" id="incidentFechaCompromiso">
           </label>
           <label class="full">Observaciones
@@ -351,11 +352,34 @@
       </form>
     </div>
 
+    <div id="ticketActivityCard" class="card ticket-activity-card" hidden>
+      <div class="card-head">
+        <h3 id="ticketActivityTitle">Registrar actividad</h3>
+        <span id="ticketActivityKind" class="badge badge-ghost"></span>
+      </div>
+      <p id="ticketActivityTicket" class="card-hint"></p>
+      <form id="ticketActivityForm">
+        <div class="form-grid ticket-activity-grid">
+          <label>Fecha de actividad *
+            <input type="date" id="ticketActivityDate" required>
+          </label>
+          <label class="full">Nota
+            <textarea id="ticketActivityNote" rows="3" placeholder="Describe la respuesta recibida o el seguimiento enviado..."></textarea>
+          </label>
+        </div>
+        <div class="incident-form-actions">
+          <button type="submit" class="btn btn-primary" id="ticketActivitySubmit">Guardar actividad</button>
+          <button type="button" class="btn" id="ticketActivityCancel">Cancelar</button>
+        </div>
+      </form>
+    </div>
+
     <div class="card">
       <div class="card-head">
         <h3>Inventario de tickets</h3>
         <span id="incidentFilterCount" class="bulk-count"></span>
       </div>
+      <p class="card-hint">El próximo control vence a los 3 días hábiles desde el reporte, la última respuesta o el último seguimiento. Al resolver o cerrar el ticket, se detiene el ciclo.</p>
       <div class="incident-filter">
         <input type="search" id="incidentSearch" aria-label="Buscar tickets" placeholder="Buscar por ticket, equipo o área...">
         <select id="incidentPlatformFilter" aria-label="Filtrar tickets por plataforma">
@@ -375,7 +399,7 @@
       <div class="incident-table-wrap">
         <table class="sum-table incident-table" aria-label="Inventario de tickets de equipos Windows y Mac">
           <thead>
-            <tr><th>Ticket</th><th>Plataforma</th><th>Equipo</th><th>Área responsable</th><th>Estado</th><th>Reporte</th><th>Compromiso</th><th>Observaciones</th><th>Acciones</th></tr>
+            <tr><th>Ticket</th><th>Plataforma</th><th>Equipo</th><th>Área responsable</th><th>Estado</th><th>Reporte</th><th>Seguimiento</th><th>Compromiso resolución</th><th>Observaciones</th><th>Acciones</th></tr>
           </thead>
           <tbody id="incidentBody"></tbody>
         </table>

@@ -689,6 +689,30 @@ strong { font-weight: 600; }
 .incident-kpis { grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); }
 .incident-form-grid { margin-top: 4px; }
 .incident-form-actions { display: flex; justify-content: flex-end; gap: 8px; margin-top: 16px; }
+.ticket-activity-card { border-left: 4px solid #0ea5e9; }
+.ticket-activity-grid { margin-top: 4px; }
+.ticket-activity-grid label {
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+  color: var(--muted);
+  font: 700 11px var(--display);
+  letter-spacing: .8px;
+  text-transform: uppercase;
+}
+.ticket-activity-grid input,
+.ticket-activity-grid textarea {
+  font: 13px var(--body);
+  padding: 8px 10px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  background: var(--bg-2);
+  color: var(--text);
+  color-scheme: dark;
+}
+.ticket-activity-grid textarea { resize: vertical; }
+.ticket-activity-grid input:focus,
+.ticket-activity-grid textarea:focus { outline: 2px solid var(--accent); outline-offset: -1px; }
 .incident-filter {
   display: flex;
   align-items: center;
@@ -712,13 +736,36 @@ strong { font-weight: 600; }
 .incident-filter input:focus,
 .incident-filter select:focus { outline: 2px solid var(--accent); outline-offset: -1px; }
 .incident-table-wrap { overflow-x: auto; }
-.incident-table { min-width: 1180px; }
+.incident-table { min-width: 1480px; }
 .ticket-platform-windows { background: #102b48; color: #7dc4ff; border: 1px solid rgba(59, 130, 246, .4); }
 .ticket-platform-mac { background: #2d1c3e; color: #d7a7ff; border: 1px solid rgba(168, 85, 247, .4); }
+.ticket-followup-cell { min-width: 210px; }
+.ticket-followup {
+  display: inline-flex;
+  padding: 4px 7px;
+  border: 1px solid transparent;
+  border-radius: 3px;
+  font: 700 10px var(--mono);
+  white-space: nowrap;
+}
+.ticket-followup-en-espera { background: #102b48; color: #7dc4ff; border-color: rgba(59, 130, 246, .4); }
+.ticket-followup-escalar-hoy { background: #3a2e0e; color: #ffd166; border-color: rgba(255, 209, 102, .45); }
+.ticket-followup-vencido { background: #3a1414; color: #ff8a8a; border-color: rgba(255, 107, 107, .5); }
+.ticket-followup-finalizado { background: #103a22; color: #6fe7a5; border-color: rgba(46, 204, 113, .4); }
+.ticket-followup-sin-fecha { background: var(--panel-2); color: var(--muted); border-color: var(--line); }
+.ticket-history { margin-top: 7px; }
+.ticket-history summary { color: var(--accent-2); cursor: pointer; font: 11px var(--mono); }
+.ticket-history-list { max-height: 180px; overflow-y: auto; margin: 7px 0 0; padding-left: 20px; }
+.ticket-history-list li { padding: 4px 0 7px 2px; color: var(--muted); }
+.ticket-history-head { display: flex; justify-content: space-between; gap: 12px; font: 11px var(--mono); }
+.ticket-history-head strong { color: var(--text); }
+.ticket-history-head time { white-space: nowrap; }
+.ticket-history-list p { margin: 3px 0 0; color: var(--muted); font-size: 12px; white-space: normal; }
 .incident-primary { display: block; font-weight: 700; font-family: var(--display); }
 .incident-secondary { display: block; margin-top: 3px; color: var(--muted); font: 11px var(--mono); }
 .incident-notes { max-width: 260px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--muted); }
 .incident-actions { white-space: nowrap; }
+.btn-ticket-followup:disabled { opacity: .45; cursor: not-allowed; }
 .incident-overdue { color: var(--danger); font-family: var(--mono); font-weight: 700; }
 .incident-status-reportado { background: #3a2e0e; color: #ffd166; border: 1px solid rgba(255, 209, 102, .4); }
 .incident-status-pendiente_area { background: #3a1414; color: #ff8a8a; border: 1px solid rgba(255, 107, 107, .4); }
@@ -1210,6 +1257,8 @@ strong { font-weight: 600; }
   .incident-kpis { grid-template-columns: 1fr; }
   .incident-form-grid { grid-template-columns: 1fr; }
   .incident-form-grid .full { grid-column: auto; }
+  .ticket-activity-grid { grid-template-columns: 1fr; }
+  .ticket-activity-grid .full { grid-column: auto; }
   .initial-chart-grid { grid-template-columns: 1fr; }
   .initial-chart-grid .full { grid-column: auto; }
 }

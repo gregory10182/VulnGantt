@@ -55,6 +55,12 @@ const PLATAFORMAS_TICKET = [
   ['mac', 'Mac']
 ];
 
+const TICKET_DIAS_HABILES_RESPUESTA = 3;
+const TIPOS_ACTIVIDAD_TICKET = [
+  ['respuesta', 'Respuesta recibida'],
+  ['seguimiento', 'Escalamiento enviado']
+];
+
 const EQ_NORM = {
   pendiente: 'apagado',
   en_proceso: 'sin_acceso',
@@ -87,7 +93,9 @@ const state = {
   editingIncidentId: null,
   incidentFilter: '',
   incidentStatusFilter: '',
-  incidentPlatformFilter: ''
+  incidentPlatformFilter: '',
+  ticketActivityId: null,
+  ticketActivityType: null
 };
 
 function $(sel) { return document.querySelector(sel); }
@@ -107,6 +115,16 @@ function fmtFecha(s) {
 function addDays(iso, n) {
   const d = new Date(iso + 'T00:00:00');
   d.setDate(d.getDate() + n);
+  return d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0') + '-' + String(d.getDate()).padStart(2, '0');
+}
+function addBusinessDays(iso, n) {
+  const d = new Date(iso + 'T00:00:00');
+  if (Number.isNaN(d.getTime())) return '';
+  let remaining = n;
+  while (remaining > 0) {
+    d.setDate(d.getDate() + 1);
+    if (d.getDay() !== 0 && d.getDay() !== 6) remaining--;
+  }
   return d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0') + '-' + String(d.getDate()).padStart(2, '0');
 }
 function esc(s) {
@@ -139,6 +157,16 @@ function sanitizeData(data) {
     if (typeof i.fecha_reporte !== 'string') i.fecha_reporte = '';
     if (typeof i.fecha_compromiso !== 'string') i.fecha_compromiso = '';
     if (typeof i.observaciones !== 'string') i.observaciones = '';
+    if (!Array.isArray(i.historial)) i.historial = [];
+    i.historial = i.historial.filter(function (event) { return event && typeof event === 'object'; }).map(function (event) {
+      return {
+        id: typeof event.id === 'string' && event.id ? event.id : uid(),
+        tipo: TIPOS_ACTIVIDAD_TICKET.some(function (type) { return type[0] === event.tipo; }) ? event.tipo : 'seguimiento',
+        fecha: typeof event.fecha === 'string' ? event.fecha : '',
+        nota: typeof event.nota === 'string' ? event.nota : '',
+        registrado: typeof event.registrado === 'string' ? event.registrado : ''
+      };
+    });
     if (typeof i.creado !== 'string') i.creado = '';
     if (typeof i.actualizado !== 'string') i.actualizado = '';
   });
@@ -1053,6 +1081,65 @@ function incidenteVencido(i) {
   return !!i.fecha_compromiso && i.fecha_compromiso < hoyISO() && !incidenteResuelto(i);
 }
 
+function ticketUltimaActividad(ticket) {
+  let latest = null;
+  (ticket.historial || []).forEach(function (event) {
+    if (event.fecha && (!latest || event.fecha >= latest.fecha)) latest = event;
+  });
+  if (!latest || (ticket.fecha_reporte && ticket.fecha_reporte > latest.fecha)) {
+    return ticket.fecha_reporte ? { tipo: 'reporte', fecha: ticket.fecha_reporte } : latest;
+  }
+  return latest;
+}
+
+function ticketFechaProximoEscalamiento(ticket) {
+  const latest = ticketUltimaActividad(ticket);
+  const anchor = latest ? latest.fecha : '';
+  return anchor ? addBusinessDays(anchor, TICKET_DIAS_HABILES_RESPUESTA) : '';
+}
+
+function ticketSeguimientoInfo(ticket) {
+  const latest = ticketUltimaActividad(ticket);
+  if (incidenteResuelto(ticket)) {
+    return { tipo: 'finalizado', etiqueta: 'Sin seguimiento', fecha: '', ultima: latest };
+  }
+  const fecha = ticketFechaProximoEscalamiento(ticket);
+  if (!fecha) return { tipo: 'sin-fecha', etiqueta: 'Sin fecha de reporte', fecha: '', ultima: latest };
+  const hoy = hoyISO();
+  if (fecha < hoy) return { tipo: 'vencido', etiqueta: 'Escalar · vencido', fecha: fecha, ultima: latest };
+  if (fecha === hoy) return { tipo: 'escalar-hoy', etiqueta: 'Escalar hoy', fecha: fecha, ultima: latest };
+  return { tipo: 'en-espera', etiqueta: 'En espera de respuesta', fecha: fecha, ultima: latest };
+}
+
+function ticketActividadEtiqueta(tipo) {
+  if (tipo === 'reporte') return 'Ticket reportado';
+  return estadoLabel(TIPOS_ACTIVIDAD_TICKET, tipo);
+}
+
+function ticketHistorialHtml(ticket) {
+  const events = (ticket.historial || []).map(function (event, index) {
+    return { event: event, order: index + 1 };
+  });
+  if (ticket.fecha_reporte) {
+    events.push({
+      event: { tipo: 'reporte', fecha: ticket.fecha_reporte, nota: 'Ticket enviado al área responsable.' },
+      order: 0
+    });
+  }
+  events.sort(function (a, b) {
+    const byDate = (a.event.fecha || '').localeCompare(b.event.fecha || '');
+    return byDate || a.order - b.order;
+  });
+  if (!events.length) return '';
+  return '<details class="ticket-history"><summary>Historial (' + events.length + ')</summary><ol class="ticket-history-list">' +
+    events.map(function (item) {
+      const event = item.event;
+      return '<li><div class="ticket-history-head"><strong>' + esc(ticketActividadEtiqueta(event.tipo)) + '</strong><time>' +
+        esc(fmtFecha(event.fecha) || '—') + '</time></div>' +
+        (event.nota ? '<p>' + esc(event.nota) + '</p>' : '') + '</li>';
+    }).join('') + '</ol></details>';
+}
+
 function ticketPlataformaKey(plataforma) {
   return PLATAFORMAS_TICKET.some(function (p) { return p[0] === plataforma; }) ? plataforma : 'mac';
 }
@@ -1083,16 +1170,23 @@ function renderIncidents() {
     const hay = [i.numero, i.equipo, i.ip, i.area, i.observaciones, ticketPlataformaLabel(i.plataforma)].join(' ').toLowerCase();
     return hay.indexOf(q) !== -1;
   }).slice().sort(function (a, b) {
+    const rank = { vencido: 0, 'escalar-hoy': 1, 'en-espera': 2, 'sin-fecha': 3, finalizado: 4 };
+    const aInfo = ticketSeguimientoInfo(a);
+    const bInfo = ticketSeguimientoInfo(b);
+    const urgency = rank[aInfo.tipo] - rank[bInfo.tipo];
+    if (urgency) return urgency;
+    if (aInfo.fecha && bInfo.fecha && aInfo.fecha !== bInfo.fecha) return aInfo.fecha.localeCompare(bInfo.fecha);
     return (b.fecha_reporte || b.creado || '').localeCompare(a.fecha_reporte || a.creado || '');
   });
 
   const total = incidents.length;
   const windows = incidents.filter(function (i) { return ticketPlataformaKey(i.plataforma) === 'windows'; }).length;
   const mac = incidents.filter(function (i) { return ticketPlataformaKey(i.plataforma) === 'mac'; }).length;
-  const pendientes = incidents.filter(function (i) { return i.estado === 'pendiente_area'; }).length;
+  const escalarHoy = incidents.filter(function (i) { return ticketSeguimientoInfo(i).tipo === 'escalar-hoy'; }).length;
+  const seguimientosVencidos = incidents.filter(function (i) { return ticketSeguimientoInfo(i).tipo === 'vencido'; }).length;
   const enRemediacion = incidents.filter(function (i) { return i.estado === 'en_remediacion'; }).length;
   const resueltos = incidents.filter(incidenteResuelto).length;
-  const vencidos = incidents.filter(incidenteVencido).length;
+  const compromisosVencidos = incidents.filter(incidenteVencido).length;
   const kpi = function (label, value, sub, cls) {
     return '<div class="kpi ' + cls + '"><div class="kpi-val">' + value + '</div><div class="kpi-label">' + label + '</div><div class="kpi-sub">' + sub + '</div></div>';
   };
@@ -1100,10 +1194,11 @@ function renderIncidents() {
     kpi('Tickets', total, 'registrados', 'kpi-total') +
     kpi('Windows', windows, 'por plataforma', 'kpi-total') +
     kpi('Mac', mac, 'por plataforma', 'kpi-total') +
-    kpi('Pendientes del área', pendientes, 'requieren atención', 'kpi-proc') +
+    kpi('Escalar hoy', escalarHoy, 'llegó el plazo de respuesta', 'kpi-proc') +
+    kpi('Seguimiento vencido', seguimientosVencidos, 'escalar de nuevo', 'kpi-crit') +
     kpi('En remediación', enRemediacion, 'en seguimiento', 'kpi-proc') +
     kpi('Remediados / cerrados', resueltos, 'resueltos', 'kpi-done') +
-    kpi('Vencidos', vencidos, 'fuera de compromiso', 'kpi-crit');
+    kpi('Compromiso vencido', compromisosVencidos, 'plazo de resolución', 'kpi-crit');
 
   if (!state.editingIncidentId && !$('#incidentFechaReporte').value) $('#incidentFechaReporte').value = hoyISO();
   $('#incidentFilterCount').textContent = filtered.length + ' de ' + total + ' ticket(s)';
@@ -1113,7 +1208,7 @@ function renderIncidents() {
   if (!filtered.length) {
     const tr = document.createElement('tr');
     const td = document.createElement('td');
-    td.colSpan = 9;
+    td.colSpan = 10;
     td.className = 'eq-empty';
     td.textContent = total ? 'Ningún ticket coincide con los filtros.' : 'Aún no hay tickets registrados.';
     tr.appendChild(td);
@@ -1125,6 +1220,17 @@ function renderIncidents() {
     const compromisoHtml = incidenteVencido(i)
       ? '<span class="incident-overdue" title="Fecha compromiso vencida">' + esc(compromiso) + '</span>'
       : esc(compromiso);
+    const seguimiento = ticketSeguimientoInfo(i);
+    const actividadHtml = '<td class="ticket-followup-cell"><span class="ticket-followup ticket-followup-' + seguimiento.tipo + '">' +
+      esc(seguimiento.etiqueta) + '</span>' +
+      (seguimiento.ultima ? '<span class="incident-secondary">Última: ' + esc(ticketActividadEtiqueta(seguimiento.ultima.tipo)) + ' · ' + esc(fmtFecha(seguimiento.ultima.fecha)) + '</span>' : '') +
+      (seguimiento.fecha ? '<span class="incident-secondary">Próximo control: ' + esc(fmtFecha(seguimiento.fecha)) + '</span>' : '') +
+      ticketHistorialHtml(i) + '</td>';
+    const accionesActividad = incidenteResuelto(i) ? '' :
+      '<button type="button" class="btn btn-sm" data-action="respuesta" data-id="' + esc(i.id) + '">Registrar respuesta</button> ' +
+      '<button type="button" class="btn btn-sm btn-ticket-followup" data-action="seguimiento" data-id="' + esc(i.id) + '"' +
+        (seguimiento.tipo === 'escalar-hoy' || seguimiento.tipo === 'vencido' ? '' : ' disabled title="Disponible al cumplirse los 3 días hábiles"') +
+        '>Escalar</button> ';
     const tr = document.createElement('tr');
     tr.innerHTML =
       '<td><span class="incident-primary">' + esc(i.numero || 'Sin número') + '</span></td>' +
@@ -1134,9 +1240,11 @@ function renderIncidents() {
       '<td>' + esc(i.area || '—') + '</td>' +
       '<td>' + incidenteEstadoBadge(i.estado) + '</td>' +
       '<td>' + esc(fmtFecha(i.fecha_reporte) || '—') + '</td>' +
+      actividadHtml +
       '<td>' + compromisoHtml + '</td>' +
       '<td class="incident-notes" title="' + esc(i.observaciones || '') + '">' + esc(i.observaciones || '—') + '</td>' +
       '<td class="incident-actions"><button type="button" class="btn btn-sm" data-action="edit" data-id="' + esc(i.id) + '">Editar</button> ' +
+        accionesActividad +
         '<button type="button" class="btn btn-sm btn-danger" data-action="del" data-id="' + esc(i.id) + '">Eliminar</button></td>';
     tbody.appendChild(tr);
   });
@@ -1145,6 +1253,7 @@ function renderIncidents() {
 function resetIncidentForm() {
   state.editingIncidentId = null;
   $('#incidentForm').reset();
+  $('#incidentFechaReporte').disabled = false;
   $('#incidentEstado').value = 'reportado';
   $('#incidentFechaReporte').value = hoyISO();
   $('#incidentPlataforma').value = 'mac';
@@ -1156,6 +1265,7 @@ function resetIncidentForm() {
 function editIncident(id) {
   const incident = state.data.incidentes.find(function (i) { return i.id === id; });
   if (!incident) return;
+  if (state.ticketActivityId) closeTicketActivity();
   state.editingIncidentId = id;
   $('#incidentNumero').value = incident.numero || '';
   $('#incidentEquipo').value = incident.equipo || '';
@@ -1164,6 +1274,7 @@ function editIncident(id) {
   $('#incidentArea').value = incident.area || '';
   $('#incidentEstado').value = incident.estado || 'reportado';
   $('#incidentFechaReporte').value = incident.fecha_reporte || '';
+  $('#incidentFechaReporte').disabled = !!incident.fecha_reporte;
   $('#incidentFechaCompromiso').value = incident.fecha_compromiso || '';
   $('#incidentObservaciones').value = incident.observaciones || '';
   $('#incidentFormTitle').textContent = 'Editar ticket';
@@ -1183,7 +1294,7 @@ function saveIncidentFromForm() {
   }
   const incident = editing
     ? state.data.incidentes.find(function (i) { return i.id === state.editingIncidentId; })
-    : { id: uid(), creado: nowISO() };
+    : { id: uid(), creado: nowISO(), historial: [] };
   if (!incident) return;
   incident.numero = numero;
   incident.equipo = equipo;
@@ -1200,6 +1311,66 @@ function saveIncidentFromForm() {
   resetIncidentForm();
   renderIncidents();
   flashMsg(editing ? 'Ticket actualizado' : 'Ticket registrado');
+}
+
+function openTicketActivity(id, type) {
+  const ticket = state.data.incidentes.find(function (i) { return i.id === id; });
+  if (!ticket || incidenteResuelto(ticket)) return;
+  if (!TIPOS_ACTIVIDAD_TICKET.some(function (item) { return item[0] === type; })) return;
+  state.ticketActivityId = id;
+  state.ticketActivityType = type;
+  const response = type === 'respuesta';
+  $('#ticketActivityTitle').textContent = response ? 'Registrar respuesta recibida' : 'Registrar escalamiento';
+  $('#ticketActivityKind').textContent = ticketActividadEtiqueta(type);
+  $('#ticketActivityTicket').textContent = 'Ticket ' + (ticket.numero || 'Sin número') + ' · ' + (ticket.equipo || 'Sin equipo') + ' · ' + (ticket.area || 'Sin área');
+  $('#ticketActivityDate').value = hoyISO();
+  $('#ticketActivityDate').max = hoyISO();
+  $('#ticketActivityNote').value = '';
+  $('#ticketActivitySubmit').textContent = response ? 'Guardar respuesta' : 'Registrar escalamiento';
+  $('#ticketActivityCard').hidden = false;
+  $('#ticketActivityCard').scrollIntoView({ behavior: 'smooth', block: 'center' });
+  $('#ticketActivityNote').focus();
+}
+
+function closeTicketActivity() {
+  state.ticketActivityId = null;
+  state.ticketActivityType = null;
+  $('#ticketActivityCard').hidden = true;
+  $('#ticketActivityForm').reset();
+}
+
+function saveTicketActivity() {
+  const ticket = state.data.incidentes.find(function (i) { return i.id === state.ticketActivityId; });
+  const type = state.ticketActivityType;
+  if (!ticket || !type || incidenteResuelto(ticket)) {
+    closeTicketActivity();
+    return;
+  }
+  if (type === 'seguimiento') {
+    const seguimiento = ticketSeguimientoInfo(ticket);
+    if (seguimiento.tipo !== 'escalar-hoy' && seguimiento.tipo !== 'vencido') {
+      flashMsg('Todavía no vence el plazo de respuesta');
+      return;
+    }
+  }
+  const fecha = $('#ticketActivityDate').value || hoyISO();
+  if (fecha > hoyISO() || (ticket.fecha_reporte && fecha < ticket.fecha_reporte)) {
+    flashMsg('La fecha debe estar entre la fecha de reporte y hoy');
+    return;
+  }
+  if (!Array.isArray(ticket.historial)) ticket.historial = [];
+  ticket.historial.push({
+    id: uid(),
+    tipo: type,
+    fecha: fecha,
+    nota: $('#ticketActivityNote').value.trim(),
+    registrado: nowISO()
+  });
+  ticket.actualizado = nowISO();
+  persist();
+  closeTicketActivity();
+  renderIncidents();
+  flashMsg(type === 'respuesta' ? 'Respuesta registrada; se reinició el plazo' : 'Escalamiento registrado; se reinició el plazo');
 }
 
 function finGantt(v) {
@@ -1337,12 +1508,50 @@ function renderBulkBar(v) {
   const sel = state.selectedEqs.size;
   $('#eqSelCount').textContent = sel + ' seleccionado(s)';
   $('#eqSelectAll').checked = n > 0 && sel === n;
+  $('#btnCopySelected').disabled = sel === 0;
 }
 
 function selectedEqIds(v) {
   return Array.from(state.selectedEqs).filter(function (id) {
     return v.equipos.some(function (e) { return e.id === id; });
   });
+}
+
+async function copySelectedEquipos(v) {
+  const ids = selectedEqIds(v);
+  const names = v.equipos.filter(function (eq) { return ids.includes(eq.id); })
+    .map(function (eq) { return (eq.nombre || '').trim(); })
+    .filter(Boolean);
+  if (!names.length) {
+    flashMsg('Selecciona al menos un equipo para copiar');
+    return;
+  }
+  const text = names.join('\n');
+  let copied = false;
+  if (typeof navigator !== 'undefined' && navigator.clipboard && navigator.clipboard.writeText) {
+    try {
+      await navigator.clipboard.writeText(text);
+      copied = true;
+    } catch (err) {}
+  }
+  if (!copied && document.execCommand) {
+    let textarea = null;
+    try {
+      textarea = document.createElement('textarea');
+      textarea.value = text;
+      textarea.setAttribute('readonly', '');
+      textarea.style.position = 'fixed';
+      textarea.style.left = '-9999px';
+      document.body.appendChild(textarea);
+      textarea.select();
+      copied = document.execCommand('copy');
+    } catch (err) {
+      copied = false;
+    } finally {
+      if (textarea) textarea.remove();
+    }
+  }
+  flashMsg(copied ? 'Copiados ' + names.length + ' equipo(s) al portapapeles' : 'No se pudo acceder al portapapeles');
 }
 
 function bulkAddEquipos(v) {
@@ -2368,6 +2577,7 @@ function bindEvents() {
   });
 
   $('#btnIncidentNew').addEventListener('click', function () {
+    if (state.ticketActivityId) closeTicketActivity();
     resetIncidentForm();
     $('#incidentNumero').focus();
   });
@@ -2378,6 +2588,11 @@ function bindEvents() {
   $('#incidentCancel').addEventListener('click', function () {
     resetIncidentForm();
   });
+  $('#ticketActivityForm').addEventListener('submit', function (e) {
+    e.preventDefault();
+    saveTicketActivity();
+  });
+  $('#ticketActivityCancel').addEventListener('click', closeTicketActivity);
   $('#incidentSearch').addEventListener('input', function () {
     state.incidentFilter = this.value.trim().toLowerCase();
     renderIncidents();
@@ -2397,9 +2612,12 @@ function bindEvents() {
     if (!incident) return;
     if (btn.dataset.action === 'edit') {
       editIncident(incident.id);
+    } else if (btn.dataset.action === 'respuesta' || btn.dataset.action === 'seguimiento') {
+      openTicketActivity(incident.id, btn.dataset.action);
     } else if (btn.dataset.action === 'del' && confirm('¿Eliminar el ticket "' + (incident.numero || 'Sin número') + '"?')) {
       state.data.incidentes = state.data.incidentes.filter(function (i) { return i.id !== incident.id; });
       if (state.editingIncidentId === incident.id) resetIncidentForm();
+      if (state.ticketActivityId === incident.id) closeTicketActivity();
       persist();
       renderIncidents();
       flashMsg('Ticket eliminado');
@@ -2567,6 +2785,11 @@ function bindEvents() {
     renderEquipos(v);
     renderList();
     flashMsg('Estado aplicado a ' + ids.length + ' equipo(s)');
+  });
+
+  $('#btnCopySelected').addEventListener('click', function () {
+    const v = getSelected();
+    if (v) copySelectedEquipos(v);
   });
 
   $('#btnBulkDelete').addEventListener('click', function () {
