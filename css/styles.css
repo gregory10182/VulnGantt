@@ -686,6 +686,7 @@ strong { font-weight: 600; }
   font: 700 23px var(--display);
 }
 .incident-head .card-hint { margin-bottom: 0; }
+.incident-head-actions { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
 .incident-kpis { grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); }
 .incident-form-grid { margin-top: 4px; }
 .incident-form-actions { display: flex; justify-content: flex-end; gap: 8px; margin-top: 16px; }
@@ -1247,6 +1248,7 @@ strong { font-weight: 600; }
   .kpi-grid.report-kpi-preview { grid-template-columns: repeat(2, minmax(0, 1fr)); }
   .initial-report-head { flex-direction: column; }
   .incident-head { flex-direction: column; }
+  .incident-head-actions { width: 100%; }
   .initial-kpis { grid-template-columns: repeat(2, minmax(0, 1fr)); }
   .initial-bars-wide { grid-template-columns: 1fr; }
   .nav-menu { position: fixed; top: 66px; right: 12px; width: min(306px, calc(100vw - 24px)); }
@@ -1255,6 +1257,7 @@ strong { font-weight: 600; }
   .kpi-grid.report-kpi-preview { grid-template-columns: 1fr; }
   .initial-kpis { grid-template-columns: 1fr; }
   .incident-kpis { grid-template-columns: 1fr; }
+  .incident-head-actions .btn { flex: 1; }
   .incident-form-grid { grid-template-columns: 1fr; }
   .incident-form-grid .full { grid-column: auto; }
   .ticket-activity-grid { grid-template-columns: 1fr; }

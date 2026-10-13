@@ -1250,6 +1250,211 @@ function renderIncidents() {
   });
 }
 
+function excelXmlEscape(value) {
+  return String(value == null ? '' : value)
+    .replace(/[\u0000-\u0008\u000B\u000C\u000E-\u001F]/g, '')
+    .replace(/[&<>"']/g, function (c) {
+      return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&apos;' }[c];
+    });
+}
+
+function excelColumnName(index) {
+  let number = index + 1;
+  let name = '';
+  while (number) {
+    number--;
+    name = String.fromCharCode(65 + number % 26) + name;
+    number = Math.floor(number / 26);
+  }
+  return name;
+}
+
+function excelDateCell(iso) {
+  if (!iso) return '';
+  const parts = String(iso).slice(0, 10).split('-').map(Number);
+  if (parts.length !== 3 || parts.some(isNaN)) return '';
+  const timestamp = Date.UTC(parts[0], parts[1] - 1, parts[2]);
+  const date = new Date(timestamp);
+  if (date.getUTCFullYear() !== parts[0] || date.getUTCMonth() !== parts[1] - 1 || date.getUTCDate() !== parts[2]) return '';
+  return { excelSerial: Math.round((timestamp - Date.UTC(1899, 11, 30)) / 86400000) };
+}
+
+function excelWorksheetXml(headers, rows, widths) {
+  const allRows = [headers].concat(rows);
+  const lastCell = excelColumnName(headers.length - 1) + allRows.length;
+  const columns = widths.map(function (width, index) {
+    return '<col min="' + (index + 1) + '" max="' + (index + 1) + '" width="' + width + '" customWidth="1"/>';
+  }).join('');
+  const sheetRows = allRows.map(function (cells, rowIndex) {
+    const cellsXml = cells.map(function (value, columnIndex) {
+      const ref = excelColumnName(columnIndex) + (rowIndex + 1);
+      if (value && typeof value === 'object' && Number.isFinite(value.excelSerial)) {
+        return '<c r="' + ref + '" s="2"><v>' + value.excelSerial + '</v></c>';
+      }
+      return '<c r="' + ref + '"' + (rowIndex === 0 ? ' s="1"' : '') + ' t="inlineStr"><is><t xml:space="preserve">' +
+        excelXmlEscape(value) + '</t></is></c>';
+    }).join('');
+    return '<row r="' + (rowIndex + 1) + '">' + cellsXml + '</row>';
+  }).join('');
+  return '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>' +
+    '<worksheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main">' +
+    '<dimension ref="A1:' + lastCell + '"/>' +
+    '<sheetViews><sheetView workbookViewId="0"><pane ySplit="1" topLeftCell="A2" activePane="bottomLeft" state="frozen"/></sheetView></sheetViews>' +
+    '<sheetFormatPr defaultRowHeight="15"/><cols>' + columns + '</cols><sheetData>' + sheetRows + '</sheetData>' +
+    '<autoFilter ref="A1:' + lastCell + '"/></worksheet>';
+}
+
+function zipCrc32(bytes) {
+  let crc = 0xFFFFFFFF;
+  for (let i = 0; i < bytes.length; i++) {
+    crc ^= bytes[i];
+    for (let bit = 0; bit < 8; bit++) crc = (crc >>> 1) ^ (crc & 1 ? 0xEDB88320 : 0);
+  }
+  return (crc ^ 0xFFFFFFFF) >>> 0;
+}
+
+function zipStoredFiles(files) {
+  const encoder = new TextEncoder();
+  const localParts = [];
+  const centralParts = [];
+  let offset = 0;
+  files.forEach(function (file) {
+    const name = encoder.encode(file.name);
+    const data = encoder.encode(file.content);
+    const crc = zipCrc32(data);
+    const local = new Uint8Array(30 + name.length);
+    const localView = new DataView(local.buffer);
+    localView.setUint32(0, 0x04034B50, true);
+    localView.setUint16(4, 20, true);
+    localView.setUint16(6, 0x0800, true);
+    localView.setUint16(8, 0, true);
+    localView.setUint16(12, 33, true);
+    localView.setUint32(14, crc, true);
+    localView.setUint32(18, data.length, true);
+    localView.setUint32(22, data.length, true);
+    localView.setUint16(26, name.length, true);
+    localView.setUint16(28, 0, true);
+    local.set(name, 30);
+    localParts.push(local, data);
+
+    const central = new Uint8Array(46 + name.length);
+    const centralView = new DataView(central.buffer);
+    centralView.setUint32(0, 0x02014B50, true);
+    centralView.setUint16(4, 20, true);
+    centralView.setUint16(6, 20, true);
+    centralView.setUint16(8, 0x0800, true);
+    centralView.setUint16(10, 0, true);
+    centralView.setUint16(14, 33, true);
+    centralView.setUint32(16, crc, true);
+    centralView.setUint32(20, data.length, true);
+    centralView.setUint32(24, data.length, true);
+    centralView.setUint16(28, name.length, true);
+    centralView.setUint16(42, offset, true);
+    central.set(name, 46);
+    centralParts.push(central);
+    offset += local.length + data.length;
+  });
+
+  const centralSize = centralParts.reduce(function (sum, part) { return sum + part.length; }, 0);
+  const end = new Uint8Array(22);
+  const endView = new DataView(end.buffer);
+  endView.setUint32(0, 0x06054B50, true);
+  endView.setUint16(8, files.length, true);
+  endView.setUint16(10, files.length, true);
+  endView.setUint32(12, centralSize, true);
+  endView.setUint32(16, offset, true);
+
+  const parts = localParts.concat(centralParts, [end]);
+  const result = new Uint8Array(parts.reduce(function (sum, part) { return sum + part.length; }, 0));
+  let position = 0;
+  parts.forEach(function (part) {
+    result.set(part, position);
+    position += part.length;
+  });
+  return result;
+}
+
+function exportTicketsExcel() {
+  const tickets = state.data.incidentes;
+  const ticketHeaders = [
+    'Ticket', 'Plataforma', 'Equipo', 'IP / hostname', 'Área responsable', 'Estado',
+    'Fecha de reporte', 'Última actividad', 'Fecha de actividad', 'Próximo control',
+    'Estado del seguimiento', 'Compromiso de resolución', 'Observaciones'
+  ];
+  const ticketRows = tickets.map(function (ticket) {
+    const latest = ticketUltimaActividad(ticket);
+    const seguimiento = ticketSeguimientoInfo(ticket);
+    return [
+      ticket.numero || '', ticketPlataformaLabel(ticket.plataforma), ticket.equipo || '', ticket.ip || '',
+      ticket.area || '', estadoLabel(ESTADOS_INCIDENTE, ticket.estado), excelDateCell(ticket.fecha_reporte),
+      latest ? ticketActividadEtiqueta(latest.tipo) : '', latest ? excelDateCell(latest.fecha) : '',
+      excelDateCell(seguimiento.fecha), seguimiento.etiqueta, excelDateCell(ticket.fecha_compromiso), ticket.observaciones || ''
+    ];
+  });
+  const activityHeaders = ['Ticket', 'Plataforma', 'Equipo', 'Tipo de actividad', 'Fecha', 'Nota'];
+  const activityRows = [];
+  tickets.forEach(function (ticket) {
+    const events = (ticket.historial || []).slice();
+    if (ticket.fecha_reporte) {
+      events.push({ tipo: 'reporte', fecha: ticket.fecha_reporte, nota: 'Ticket enviado al área responsable.', registrado: '', order: 0 });
+    }
+    events.sort(function (a, b) {
+      return (a.fecha || '').localeCompare(b.fecha || '') || (a.registrado || '').localeCompare(b.registrado || '') || (a.order || 1) - (b.order || 1);
+    });
+    events.forEach(function (event) {
+      activityRows.push([
+        ticket.numero || '', ticketPlataformaLabel(ticket.plataforma), ticket.equipo || '',
+        ticketActividadEtiqueta(event.tipo), excelDateCell(event.fecha), event.nota || ''
+      ]);
+    });
+  });
+
+  const workbook = '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>' +
+    '<workbook xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships">' +
+    '<bookViews><workbookView/></bookViews><sheets>' +
+    '<sheet name="Tickets" sheetId="1" r:id="rId1"/><sheet name="Historial" sheetId="2" r:id="rId2"/>' +
+    '</sheets></workbook>';
+  const styles = '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>' +
+    '<styleSheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main">' +
+    '<numFmts count="1"><numFmt numFmtId="164" formatCode="dd/mm/yyyy"/></numFmts>' +
+    '<fonts count="2"><font><sz val="11"/><name val="Calibri"/></font><font><b/><sz val="11"/><name val="Calibri"/></font></fonts>' +
+    '<fills count="2"><fill><patternFill patternType="none"/></fill><fill><patternFill patternType="gray125"/></fill></fills>' +
+    '<borders count="1"><border><left/><right/><top/><bottom/><diagonal/></border></borders>' +
+    '<cellStyleXfs count="1"><xf numFmtId="0" fontId="0" fillId="0" borderId="0"/></cellStyleXfs>' +
+    '<cellXfs count="3"><xf numFmtId="0" fontId="0" fillId="0" borderId="0" xfId="0"/>' +
+    '<xf numFmtId="0" fontId="1" fillId="0" borderId="0" xfId="0" applyFont="1"/>' +
+    '<xf numFmtId="164" fontId="0" fillId="0" borderId="0" xfId="0" applyNumberFormat="1"/></cellXfs>' +
+    '<cellStyles count="1"><cellStyle name="Normal" xfId="0" builtinId="0"/></cellStyles></styleSheet>';
+  const files = [
+    { name: '[Content_Types].xml', content: '<?xml version="1.0" encoding="UTF-8" standalone="yes"?><Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types">' +
+      '<Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/><Default Extension="xml" ContentType="application/xml"/>' +
+      '<Override PartName="/xl/workbook.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet.main+xml"/>' +
+      '<Override PartName="/xl/styles.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.styles+xml"/>' +
+      '<Override PartName="/xl/worksheets/sheet1.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.worksheet+xml"/>' +
+      '<Override PartName="/xl/worksheets/sheet2.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.worksheet+xml"/></Types>' },
+    { name: '_rels/.rels', content: '<?xml version="1.0" encoding="UTF-8" standalone="yes"?><Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">' +
+      '<Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="xl/workbook.xml"/></Relationships>' },
+    { name: 'xl/workbook.xml', content: workbook },
+    { name: 'xl/_rels/workbook.xml.rels', content: '<?xml version="1.0" encoding="UTF-8" standalone="yes"?><Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">' +
+      '<Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/worksheet" Target="worksheets/sheet1.xml"/>' +
+      '<Relationship Id="rId2" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/worksheet" Target="worksheets/sheet2.xml"/>' +
+      '<Relationship Id="rId3" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/styles" Target="styles.xml"/></Relationships>' },
+    { name: 'xl/styles.xml', content: styles },
+    { name: 'xl/worksheets/sheet1.xml', content: excelWorksheetXml(ticketHeaders, ticketRows, [18, 14, 24, 20, 24, 20, 16, 26, 16, 16, 25, 22, 42]) },
+    { name: 'xl/worksheets/sheet2.xml', content: excelWorksheetXml(activityHeaders, activityRows, [18, 14, 24, 30, 16, 60]) }
+  ];
+  const blob = new Blob([zipStoredFiles(files)], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' });
+  const url = URL.createObjectURL(blob);
+  const link = document.createElement('a');
+  link.href = url;
+  link.download = 'VulnGantt_Tickets_' + hoyISO() + '.xlsx';
+  document.body.appendChild(link);
+  link.click();
+  link.remove();
+  setTimeout(function () { URL.revokeObjectURL(url); }, 2000);
+  flashMsg('Exportados ' + tickets.length + ' ticket(s) a Excel');
+}
+
 function resetIncidentForm() {
   state.editingIncidentId = null;
   $('#incidentForm').reset();
@@ -2576,6 +2781,7 @@ function bindEvents() {
     if (tr) selectVuln(tr.dataset.id);
   });
 
+  $('#btnExportTickets').addEventListener('click', exportTicketsExcel);
   $('#btnIncidentNew').addEventListener('click', function () {
     if (state.ticketActivityId) closeTicketActivity();
     resetIncidentForm();
